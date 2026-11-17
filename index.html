@@ -489,10 +489,33 @@ function turnCard(t, editable) {
     </div>`).join("")}
     ${editable ? `<div class="row"><button class="btn primary" onclick="run(this, submitAnswers)">답변 제출하고 판정</button><span class="hint">음성 답변은 모델에 그대로 전달됩니다. 받아쓰기나 직접 입력한 답변은 오류를 고친 뒤 제출하세요.</span></div>`
       : `${audioNote(t.audio)}<h3>판정 결과 <span class="hint">${esc((t.graders || []).join(" · "))}</span></h3>
-         ${t.judgments.length ? t.judgments.map(j => `<div>${chip(j.status)} ${unitName(j.unit)} <span class="hint">두 채점자 일치 → 확정</span></div>`).join("") : '<p class="hint">확정된 판정이 없습니다.</p>'}
+         ${t.by_grader ? graderTable(t) : `${t.judgments.length ? t.judgments.map(j => `<div>${chip(j.status)} ${unitName(j.unit)} <span class="hint">두 채점자 일치 → 확정</span></div>`).join("") : '<p class="hint">확정된 판정이 없습니다.</p>'}
          ${(t.disagreements || []).map(d => `<div><span class="chip s-unknown">채점자 불일치</span> ${unitName(d.unit)} <span class="hint">${d.opinions.map(o => esc(o.status)).join(" / ")} → 확정하지 않고 다시 확인</span></div>`).join("")}
-         ${t.discarded.length ? `<p class="hint">근거 인용이 답변 전사문과 맞지 않아 버린 판정 ${t.discarded.length}건</p>` : ""}`}
+         ${t.discarded.length ? `<p class="hint">근거 인용이 답변 전사문과 맞지 않아 버린 판정 ${t.discarded.length}건</p>` : ""}`}`}
   </div>`;
+}
+// 항목마다 채점자 1, 2의 판정을 나란히 보여 준다. 판정이 버려졌거나 미확인으로 둔 경우 그 이유도 보여 준다.
+function graderTable(t) {
+  const norm = u => Core.normalizeUnit(u);
+  const units = Core.UNITS.filter(u => t.by_grader.some(g => g[u]) || t.discarded.some(d => norm(d.unit) === u)
+    || (t.grader_raw || []).some(r => r.some(j => norm(j?.unit) === u)));
+  if (!units.length) return '<p class="hint">두 채점자 모두 판정한 항목이 없습니다.</p>';
+  const confirmed = new Set(t.judgments.map(j => j.unit));
+  const cell = (u, gi) => {
+    const o = t.by_grader[gi][u], g = t.graders[gi];
+    if (o) return `${chip(o.status)}${o.certain ? "" : ' <span class="hint">(확신 낮음)</span>'}<blockquote>“${esc(o.quote)}”</blockquote><div>${esc(o.reason)}</div><details class="hint" style="border:0;padding:0;margin:4px 0 0"><summary style="font-weight:400">근거로 든 채점기준</summary>${esc(o.rubric_item)}</details>`;
+    const d = t.discarded.find(x => x.grader === g && norm(x.unit) === u);
+    if (d) return `<span class="chip s-na">판정 버림</span> <span class="hint">${esc(d.status)} 판정을 냈으나 ${esc(d.discard_reason)}</span>${d.quote ? `<blockquote>“${esc(d.quote)}”</blockquote>` : ""}<div class="hint">${esc(d.reason)}</div>`;
+    const r = (t.grader_raw?.[gi] || []).find(j => norm(j?.unit) === u);
+    if (r) return `${chip("미확인")}<div class="hint">${esc(r.reason || "답변만으로 판단할 수 없음")}</div>`;
+    return `<span class="hint">이 항목을 판정하지 않음</span>`;
+  };
+  return `<div style="overflow-x:auto"><table><tr><th>항목</th>${t.graders.map(g => `<th style="width:38%">${esc(g)}</th>`).join("")}<th style="white-space:nowrap">결과</th></tr>
+    ${units.map(u => `<tr><td style="white-space:nowrap"><b>${unitName(u)}</b></td><td>${cell(u, 0)}</td><td>${cell(u, 1)}</td>
+      <td>${confirmed.has(u) ? `${chip(t.judgments.find(j => j.unit === u).status)}<div class="hint">일치 → 확정</div>`
+        : (t.disagreements || []).some(d => d.unit === u) ? '<span class="chip s-unknown">불일치</span><div class="hint">확정하지 않고 다시 확인</div>'
+        : `${chip("미확인")}<div class="hint">두 채점자 모두 판단 보류</div>`}</td></tr>`).join("")}
+  </table></div>`;
 }
 function renderQuestionTab() {
   const s = S.session;

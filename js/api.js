@@ -273,6 +273,9 @@
       }
       turn.audio = audioInfo; turn.answers = answers;
       turn.graders = graders; turn.discarded = discarded;
+      // 화면에서 채점자별 판정을 나란히 보여 주려고 남긴다. by_grader: 인정된 판정, grader_raw: 모델이 낸 판정 그대로(미확인 이유 포함)
+      turn.by_grader = byGrader;
+      turn.grader_raw = results.map(([result]) => (Array.isArray(result.judgments) ? result.judgments : []));
       [turn.judgments, turn.disagreements] = C.applyJudgments(s.state, byGrader, graders, turn.turn);
       if (turn.turn >= C.MAX_TURNS || !C.needsSecondTurn(s.state)) {
         C.finalize(s.state, s.turns);
