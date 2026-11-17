@@ -7,7 +7,7 @@
 <style>
 :root {
   --bg: #f4f5f7; --card: #fff; --line: #dfe2e8; --text: #1d2330; --sub: #667085; --accent: #2b4c9b;
-  --apply: #1a7f4b; --understand: #2f6fde; --mis: #d1453b; --unknown: #d99a00; --na: #b8bcc4;
+  --apply: #1a7f4b; --understand: #2f6fde; --mis: #d1453b; --unknown: #d99a00; --not: #7b5ea7; --na: #b8bcc4;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 "Pretendard", "Malgun Gothic", system-ui, sans-serif; }
@@ -43,7 +43,7 @@ button.btn.rec { background: var(--mis); border-color: var(--mis); color: #fff; 
 .chip { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; color: #fff; background: var(--na); margin-right: 4px; white-space: nowrap; }
 .chip.t { background: #eef1f6; color: var(--text); }
 .s-apply { background: var(--apply); } .s-understand { background: var(--understand); }
-.s-mis { background: var(--mis); } .s-unknown { background: var(--unknown); } .s-na { background: var(--na); }
+.s-mis { background: var(--mis); } .s-not { background: var(--not); } .s-unknown { background: var(--unknown); } .s-na { background: var(--na); }
 .need { color: var(--mis); font-weight: 600; font-size: 13px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
@@ -112,9 +112,9 @@ pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background
 const TABS = ["1. 채점기준표 만들기", "2. 강의 선택 & 채점기준표 넣기", "3. 학생 발표 자료 입력", "4. 질문 생성", "5. 학생 수준 및 피드백", "6. 기록"];
 // 판정 항목은 서버(core.py)가 정한다. 개념 7개, 원칙 5개, 두 요소로 된 원칙, 원칙 사이의 관계 10개.
 let CONCEPTS = [], PRINCIPLES = [], ELEMENTS = {}, PAIRS = [];
-const STATUSES = ["적용 수준", "이해 수준", "오개념", "미확인"];
-const CLS = {"적용 수준": "apply", "이해 수준": "understand", "오개념": "mis", "미확인": "unknown"};
-const COLOR = {"적용 수준": "#1a7f4b", "이해 수준": "#2f6fde", "오개념": "#d1453b", "미확인": "#d99a00"};
+const STATUSES = ["적용 수준", "이해 수준", "오개념", "이해 못함", "미확인"];
+const CLS = {"적용 수준": "apply", "이해 수준": "understand", "오개념": "mis", "이해 못함": "not", "미확인": "unknown"};
+const COLOR = {"적용 수준": "#1a7f4b", "이해 수준": "#2f6fde", "오개념": "#d1453b", "이해 못함": "#7b5ea7", "미확인": "#d99a00"};
 const ABSENT = "#b8bcc4";  // 학생이 말하지 않아 상태표에 없는 항목
 
 const S = { tab: 1, rubrics: [], courses: [], samples: [], settings: {}, extraModels: [], rubric: null, courseId: localStorage.getItem("courseId"), session: null, unit: null,
@@ -586,7 +586,7 @@ function renderQuestionTab() {
   if (s.finished) next = `<div class="card"><div class="row"><b>질의응답이 끝났습니다.</b><button class="btn primary" onclick="show(5)">학생 수준 및 피드백 보기</button></div></div>`;
   else if (!waiting) next = `<div class="card"><div class="row"><button class="btn primary" onclick="run(this, makeQuestions)">${s.turns.length + 1}턴 질문 생성</button>
     ${s.turns.length ? `<button class="btn" onclick="show(5)">지금까지의 그래프 보기</button>` : ""}
-    <span class="hint">${s.turns.length ? "미확인 항목, 채점자 의견이 갈린 항목, 확실하지 않은 오개념이 남아 2턴을 진행합니다." : "모든 학생이 최소 1턴은 질문을 받습니다. 턴당 최대 3개."}</span></div></div>`;
+    <span class="hint">${s.turns.length ? "미확인 항목, 채점자 의견이 갈린 항목, 확실하지 않은 오개념·이해 못함이 남아 2턴을 진행합니다." : "모든 학생이 최소 1턴은 질문을 받습니다. 턴당 최대 3개."}</span></div></div>`;
   $("tab4").innerHTML = inputSummary(s, false) + analysisCard(s) + s.turns.map((t, i) => turnCard(t, waiting && i === s.turns.length - 1)).join("") + next;
 }
 async function makeQuestions() { setSession(await api(`/api/sessions/${S.session.id}/questions`, {})); S.ansAudio = {}; renderQuestionTab(); }
@@ -635,7 +635,7 @@ function unitPanel(s, rubric) {
       ${e.quote ? `<div><b>질문</b> ${esc(e.question)}</div><blockquote>“${esc(e.quote)}”</blockquote><div><b>채점기준표</b> ${esc(e.rubric_item)}</div>` : ""}
       <div class="hint">${esc(e.reason)}</div></div>`;
   return `<h2>${unitName(S.unit)}</h2>
-    <div>${chip(u.status)} <span class="hint">${u.source}${u.status === "오개념" && !u.certain ? " · 확실하지 않음" : ""}</span></div>
+    <div>${chip(u.status)} <span class="hint">${u.source}${["오개념", "이해 못함"].includes(u.status) && !u.certain ? " · 확실하지 않음" : ""}</span></div>
     ${u.needs_instructor ? `<p class="need">교수자 판단 필요: 2턴 뒤에도 두 채점자의 판정이 일치하지 않았거나 답변으로 확인되지 않았습니다.</p>` : ""}
     ${u.note ? `<p><b>교수자 판정 사유</b> ${esc(u.note)}</p>` : ""}
     ${u.disagreement ? `<h3>채점자 의견 불일치 <span class="hint">확정하지 않음</span></h3>${u.disagreement.map(opinion).join("")}` : ""}
@@ -718,7 +718,7 @@ async function downloadLevel(id) {
   for (const u of Core.UNITS) {
     const st = s.state[u], ev = st?.evidence || [];
     rows.push([unitName(u), u.includes("|") ? "원칙 간 관계" : "개념",
-      st ? st.status : "말하지 않음", st?.source || "", st && st.status === "오개념" && !st.certain ? "확실하지 않음" : "",
+      st ? st.status : "말하지 않음", st?.source || "", st && ["오개념", "이해 못함"].includes(st.status) && !st.certain ? "확실하지 않음" : "",
       st?.needs_instructor ? "예" : "", st?.note || "",
       [...new Set(ev.map(e => e.quote))].join(" / "), [...new Set(ev.map(e => e.rubric_item))].join(" / "),
       [...new Set(ev.map(e => `${e.turn}턴 ${e.grader}: ${e.reason}`))].join(" / ")]);

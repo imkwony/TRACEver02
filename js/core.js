@@ -9,10 +9,13 @@
   const UNITS = CONCEPTS.concat(PAIRS);
   const ALIASES = {"견고성과 안전성": "안전성과 견고성", "설명가능성과 투명성": "투명성과 설명가능성"};
 
-  const APPLY = "적용 수준", UNDERSTAND = "이해 수준", MISCONCEPTION = "오개념", UNKNOWN = "미확인";
-  const JUDGED = [APPLY, UNDERSTAND, MISCONCEPTION];
+  // 이해 못함: 모르겠다고 하거나, 엉뚱한 대답을 하거나, 답 내용으로 보아 이해하지 못한 것이 드러남(판단 가능).
+  // 미확인: 근거가 부족해 판단할 수 없음(판단 불가).
+  const APPLY = "적용 수준", UNDERSTAND = "이해 수준", MISCONCEPTION = "오개념", NOT_UNDERSTOOD = "이해 못함", UNKNOWN = "미확인";
+  const JUDGED = [APPLY, UNDERSTAND, MISCONCEPTION, NOT_UNDERSTOOD];
   const STATUSES = JUDGED.concat([UNKNOWN]);
   const MAX_TURNS = 2, MAX_QUESTIONS = 3, MIN_QUOTE_LEN = 6;
+  const MIN_QUOTE_LEN_SHORT = 2;  // 이해 못함은 "몰라요"처럼 짧은 답도 근거가 된다.
 
   // 개념이나 원칙 이름이 속한 원칙. 모르는 이름이면 null.
   function principleOf(name) {
@@ -68,9 +71,9 @@
   const norm = text => String(text ?? "").replace(/[\s"'“”‘’.,!?…·()\[\]]/g, "");
 
   // 인용문이 실제 전사문에 있는지 대조한다. 띄어쓰기와 문장부호 차이는 무시한다.
-  function quoteIn(quote, text) {
+  function quoteIn(quote, text, minLen = MIN_QUOTE_LEN) {
     const q = norm(quote);
-    return q.length >= MIN_QUOTE_LEN && norm(text).includes(q);
+    return q.length >= minLen && norm(text).includes(q);
   }
 
   const rubricEntry = (rubric, unit) => (rubric.concepts || {})[unit] || (rubric.relations || {})[unit] || {};
@@ -79,6 +82,7 @@
     const entry = rubricEntry(rubric, unit);
     if (status === APPLY) return `적용 수준 기준: ${entry.apply || ""}`;
     if (status === UNDERSTAND) return `이해 수준 기준: ${entry.understand || ""}`;
+    if (status === NOT_UNDERSTOOD) return `이해 수준 기준에 못 미침: ${entry.understand || ""}`;
     const items = entry.misconceptions || [];
     const i = parseInt(misconceptionIndex, 10) || 0;
     if (i >= 1 && i <= items.length) return `흔한 오개념: ${items[i - 1]}`;
@@ -101,7 +105,8 @@
         continue;
       }
       const quote = String(j.quote ?? "").trim();
-      const qi = answers.findIndex(a => quoteIn(quote, a));
+      const minLen = status === NOT_UNDERSTOOD ? MIN_QUOTE_LEN_SHORT : MIN_QUOTE_LEN;
+      const qi = answers.findIndex(a => quoteIn(quote, a, minLen));
       if (qi < 0) {
         discarded.push({...j, grader, discard_reason: "인용문이 답변 전사문에 없음"});
         continue;
@@ -138,7 +143,9 @@
     return [accepted, disagreements];
   }
 
-  const needsSecondTurn = state => Object.values(state).some(u => u.status === UNKNOWN || (u.status === MISCONCEPTION && !u.certain));
+  // 미확인이 남았거나, 오개념·이해 못함 판정이 확실하지 않으면 2턴이 필요하다.
+  const needsSecondTurn = state => Object.values(state).some(u => u.status === UNKNOWN
+    || ((u.status === MISCONCEPTION || u.status === NOT_UNDERSTOOD) && !u.certain));
 
   function finalize(state, turns) {
     const asked = new Set(turns.flatMap(t => t.questions.flatMap(q => q.targets)));
@@ -155,7 +162,7 @@
     Object.assign(u, {status, source: "교수자 판정", note, certain: true, needs_instructor: false});
   }
 
-  root.Core = {PRINCIPLES, ELEMENTS, CONCEPTS, PAIRS, UNITS, ALIASES, APPLY, UNDERSTAND, MISCONCEPTION, UNKNOWN, JUDGED, STATUSES,
+  root.Core = {PRINCIPLES, ELEMENTS, CONCEPTS, PAIRS, UNITS, ALIASES, APPLY, UNDERSTAND, MISCONCEPTION, NOT_UNDERSTOOD, UNKNOWN, JUDGED, STATUSES,
     MAX_TURNS, MAX_QUESTIONS, principleOf, normalizeUnit, expandUnit, ensure, initialState, quoteIn, rubricEntry, rubricItem,
     markAsked, validJudgments, applyJudgments, needsSecondTurn, finalize, instructorOverride};
 })(typeof window !== "undefined" ? window : globalThis);

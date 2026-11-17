@@ -8,6 +8,7 @@ const TR = "투명성과 설명가능성", SAFE = "안전성과 견고성";
 const Q = [{text: "질문1", targets: ["공정성"]}, {text: "질문2", targets: [`공정성|${TR}`]}];
 const A = ["공정성은 특정 집단이 부당하게 불이익을 받지 않게 하는 것입니다.", "잘 모르겠습니다."];
 const eq = assert.deepStrictEqual, ok = assert.ok;
+const valid0 = () => ({turn: 1, grader: "g", question: "q", quote: "몰라요", status: "", rubric_item: "", reason: "", certain: true});
 const tests = {
   units() {
     eq(C.CONCEPTS, ["신뢰성", "공정성", "윤리성", "투명성", "설명가능성", "안전성", "견고성"]);
@@ -70,6 +71,24 @@ const tests = {
     ok(s["공정성"].needs_instructor && s["신뢰성"].needs_instructor && !("신뢰성|공정성" in s));
     C.instructorOverride(s, "공정성", C.UNDERSTAND, "구두로 확인");
     ok(s["공정성"].source === "교수자 판정" && !s["공정성"].needs_instructor);
+  },
+  notUnderstood() {
+    ok(C.STATUSES.includes("이해 못함") && C.JUDGED.includes("이해 못함"));
+    const ans = ["몰라요", "공정성은 특정 집단이 부당하게 불이익을 받지 않게 하는 것입니다."];
+    const q = [{text: "질문1", targets: ["공정성"]}, {text: "질문2", targets: ["윤리성"]}];
+    // 짧은 "몰라요"도 이해 못함의 근거가 된다. 다른 상태는 여전히 6자 이상이어야 한다.
+    let [valid, bad] = C.validJudgments([{unit: "공정성", status: C.NOT_UNDERSTOOD, quote: "몰라요"}], 1, q, ans, R, "채점자 1");
+    eq(valid["공정성"].status, C.NOT_UNDERSTOOD); ok(valid["공정성"].rubric_item.startsWith("이해 수준 기준에 못 미침"));
+    [valid, bad] = C.validJudgments([{unit: "공정성", status: C.UNDERSTAND, quote: "몰라요"}], 1, q, ans, R, "채점자 1");
+    ok(!Object.keys(valid).length && bad.length === 1);
+    // 확실한 이해 못함은 2턴을 강제하지 않고, 종료 뒤 교수자 판단 필요로 가지 않는다.
+    const s = C.initialState(["공정성"]);
+    C.applyJudgments(s, [{"공정성": {...valid0(), status: C.NOT_UNDERSTOOD}}, {"공정성": {...valid0(), status: C.NOT_UNDERSTOOD}}], ["1", "2"], 1);
+    eq(s["공정성"].status, C.NOT_UNDERSTOOD);
+    delete s["공정성|투명성과 설명가능성"];
+    ok(!C.needsSecondTurn(s));
+    C.finalize(s, []); ok(!s["공정성"].needs_instructor);
+    s["공정성"].certain = false; ok(C.needsSecondTurn(s));
   },
   secondTurn() {
     const s = C.initialState(["공정성"]);
