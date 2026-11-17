@@ -688,18 +688,50 @@ async function renderRecordTab() {
       ${list.length ? `<table><tr><th>일시</th><th>강의</th><th>학생</th><th>주제</th><th>진행</th><th></th></tr>
         ${list.map(r => `<tr class="pick" onclick="openRecord('${r.id}')"><td>${r.created_at}</td><td>${esc(r.course_name)}</td><td>${esc(r.student.name)} ${esc(r.student.number)}</td><td>${esc(r.topic)}</td>
           <td>${r.finished ? "종료" : r.turns + "턴 진행 중"}${r.needs_instructor ? ` <span class="need">· 교수자 판단 필요 ${r.needs_instructor}</span>` : ""}</td>
-          <td><a href="#" onclick="event.stopPropagation(); exportRecord('${r.id}'); return false">내보내기</a></td></tr>`).join("")}</table>`
+          <td style="white-space:nowrap" onclick="event.stopPropagation()">
+            ${r.finished ? `<button class="btn" onclick="run(this, () => downloadLevel('${r.id}'))">학생 수준 저장</button>` : `<span class="hint" title="질의응답이 끝나면 저장할 수 있습니다">학생 수준 -</span>`}
+            ${r.has_feedback ? `<button class="btn" onclick="run(this, () => downloadFeedback('${r.id}'))">피드백 저장</button>` : `<span class="hint" title="피드백이 만들어지면 저장할 수 있습니다">피드백 -</span>`}
+            <a href="#" onclick="exportRecord('${r.id}'); return false">전체 기록(JSON)</a></td></tr>`).join("")}</table>`
         : `<p class="hint">아직 기록이 없습니다.</p>`}
-      <p class="hint">기록은 이 브라우저(IndexedDB)에만 저장됩니다. 다른 컴퓨터나 브라우저에서는 보이지 않으니 필요한 기록은 내보내기로 JSON 파일을 받아 두세요. 행을 누르면 다시 열립니다.</p>
+      <p class="hint">학생 수준은 엑셀로 열 수 있는 CSV, 피드백은 텍스트(txt) 파일로 저장됩니다. 학생 수준 파일에는 교수자 직접 판정도 반영됩니다.</p>
+      <p class="hint">기록은 이 브라우저(IndexedDB)에만 저장됩니다. 다른 컴퓨터나 브라우저에서는 보이지 않으니 필요한 기록은 전체 기록(JSON)으로 받아 두세요. 행을 누르면 다시 열립니다.</p>
     </div>
     ${s ? `<div class="card"><h2>열려 있는 기록의 전 과정 · ${esc(s.student.name)}</h2>
       <details><summary>발표 전사문</summary><pre>${esc(s.presentation.transcript)}</pre></details>
       ${s.log.map(l => `<details><summary>${l.time} · ${esc(l.event)}</summary><pre>${esc(JSON.stringify(l.detail, null, 1))}</pre></details>`).join("")}</div>` : ""}`;
 }
-async function exportRecord(id) {
+function saveBlob(blob, name) {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(await Engine.exportSession(id)); a.download = id + ".json"; a.click();
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+async function exportRecord(id) { saveBlob(await Engine.exportSession(id), id + ".json"); }
+// 파일 이름: 학생 이름_학번_종류.확장자 (이름이 없으면 기록 ID)
+const fileBase = s => [s.student.name, s.student.number].filter(Boolean).join("_").replace(/[\\/:*?"<>|\s]+/g, "_") || s.id;
+const recordHead = s => [["학생", s.student.name || "(이름 없음)"], ["학번", s.student.number || ""], ["강의", s.course_name],
+  ["발표 주제", s.analysis.topic || ""], ["채점기준표", s.rubric.name || ""], ["평가 일시", s.created_at]];
+// 학생 수준: 판정 항목 17개의 최종 상태와 근거. 엑셀에서 한글이 깨지지 않게 BOM을 붙인다.
+async function downloadLevel(id) {
+  const s = await api("/api/sessions/" + id);
+  const cell = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = recordHead(s).concat([[], ["항목", "종류", "최종 상태", "판정 출처", "확실성", "교수자 판단 필요", "교수자 판정 사유", "근거(답변 인용)", "근거로 든 채점기준", "판정 이유"]]);
+  for (const u of Core.UNITS) {
+    const st = s.state[u], ev = st?.evidence || [];
+    rows.push([unitName(u), u.includes("|") ? "원칙 간 관계" : "개념",
+      st ? st.status : "말하지 않음", st?.source || "", st && st.status === "오개념" && !st.certain ? "확실하지 않음" : "",
+      st?.needs_instructor ? "예" : "", st?.note || "",
+      [...new Set(ev.map(e => e.quote))].join(" / "), [...new Set(ev.map(e => e.rubric_item))].join(" / "),
+      [...new Set(ev.map(e => `${e.turn}턴 ${e.grader}: ${e.reason}`))].join(" / ")]);
+  }
+  saveBlob(new Blob(["﻿" + rows.map(r => r.map(cell).join(",")).join("\r\n")], {type: "text/csv;charset=utf-8"}), fileBase(s) + "_학생수준.csv");
+}
+// 피드백: 학생에게 줄 총평과 항목별 더 공부할 부분.
+async function downloadFeedback(id) {
+  const s = await api("/api/sessions/" + id), fb = s.feedback;
+  if (!fb) throw new Error("피드백이 아직 없습니다. 탭 5에서 만드세요.");
+  const lines = ["발표 질의응답 피드백", "", ...recordHead(s).map(([k, v]) => `${k}: ${v}`), "", "[총평]", fb.overall, "", "[더 공부할 부분]"];
+  for (const i of fb.items) lines.push("", `■ ${unitName(i.unit)}${s.state[i.unit] ? ` (${s.state[i.unit].status})` : ""}`, i.text);
+  saveBlob(new Blob(["﻿" + lines.join("\r\n")], {type: "text/plain;charset=utf-8"}), fileBase(s) + "_피드백.txt");
 }
 async function openRecord(id) { setSession(await api("/api/sessions/" + id)); S.unit = null; show(S.session.finished ? 5 : 4); }
 

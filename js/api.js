@@ -186,7 +186,7 @@
       const all = await idb("records", "readonly", o => o.getAll());
       return all.sort((a, b) => (a.id < b.id ? 1 : -1)).map(s => ({
         id: s.id, created_at: s.created_at, course_name: s.course_name, student: s.student, topic: s.analysis.topic || "",
-        finished: s.finished, turns: s.turns.length, needs_instructor: Object.values(s.state).filter(u => u.needs_instructor).length}));
+        finished: s.finished, turns: s.turns.length, has_feedback: Boolean(s.feedback), needs_instructor: Object.values(s.state).filter(u => u.needs_instructor).length}));
     }],
     ["GET", /^\/api\/sessions\/([\w-]+)$/, ([sid]) => loadSession(sid)],
     // 탭 3: 발표를 분석해 주제와 개념을 파악하고 초기 상태를 만든다.
