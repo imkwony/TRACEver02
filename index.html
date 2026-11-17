@@ -7,7 +7,7 @@
 <style>
 :root {
   --bg: #f4f5f7; --card: #fff; --line: #dfe2e8; --text: #1d2330; --sub: #667085; --accent: #2b4c9b;
-  --apply: #1a7f4b; --understand: #2f6fde; --mis: #d1453b; --unknown: #d99a00; --not: #7b5ea7; --na: #b8bcc4;
+  --apply: #1a7f4b; --understand: #2f6fde; --mis: #d1453b; --unknown: #4b5260; --not: #e8780c; --na: #b8bcc4;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 "Pretendard", "Malgun Gothic", system-ui, sans-serif; }
@@ -114,8 +114,8 @@ const TABS = ["1. 채점기준표 만들기", "2. 강의 선택 & 채점기준�
 let CONCEPTS = [], PRINCIPLES = [], ELEMENTS = {}, PAIRS = [];
 const STATUSES = ["적용 수준", "이해 수준", "오개념", "이해 못함", "미확인"];
 const CLS = {"적용 수준": "apply", "이해 수준": "understand", "오개념": "mis", "이해 못함": "not", "미확인": "unknown"};
-const COLOR = {"적용 수준": "#1a7f4b", "이해 수준": "#2f6fde", "오개념": "#d1453b", "이해 못함": "#7b5ea7", "미확인": "#d99a00"};
-const ABSENT = "#b8bcc4";  // 학생이 말하지 않아 상태표에 없는 항목
+const COLOR = {"적용 수준": "#1a7f4b", "이해 수준": "#2f6fde", "오개념": "#d1453b", "이해 못함": "#e8780c", "미확인": "#4b5260"};
+const ABSENT = "#cdd1d8";  // 학생이 말하지 않아 상태표에 없는 항목
 
 const S = { tab: 1, rubrics: [], courses: [], samples: [], settings: {}, extraModels: [], rubric: null, courseId: localStorage.getItem("courseId"), session: null, unit: null,
             draft: null, materials: {name: "", text: ""}, rec: null, scriptAudio: null, ansAudio: {} };
@@ -621,7 +621,7 @@ function graphSvg(state) {
   }).join("");
   const nodes = CONCEPTS.map(c => {
     const u = of(c), na = u.absent, [x, y] = pos[c];
-    return `<g class="node" onclick="pickUnit('${c}')" ><circle cx="${x}" cy="${y}" r="${R}" fill="#fff"/><circle opacity="${na ? .45 : 1}" cx="${x}" cy="${y}" r="${R}" fill="${color(u)}" stroke="${S.unit === c ? "#1d2330" : "#fff"}" stroke-width="${S.unit === c ? 4 : 3}" ${u.needs_instructor ? 'stroke-dasharray="7 5"' : ""}/><text x="${x}" y="${y}">${c}</text></g>`;
+    return `<g class="node" onclick="pickUnit('${c}')" ><circle cx="${x}" cy="${y}" r="${R}" fill="#fff"/><circle opacity="${na ? .45 : 1}" cx="${x}" cy="${y}" r="${R}" fill="${color(u)}" stroke="${S.unit === c ? "#1d2330" : "#fff"}" stroke-width="${S.unit === c ? 4 : 3}" ${u.needs_instructor ? 'stroke-dasharray="7 5"' : ""}/><text x="${x}" y="${y}" ${na ? 'style="fill:#8a909c"' : ""}>${c}</text></g>`;
   }).join("");
   return `<svg viewBox="0 0 560 444" style="width:100%;max-width:560px;display:block;margin:0 auto">${bands}${edges}${nodes}</svg>`;
 }
