@@ -162,7 +162,7 @@ function setSession(s) {
 // 탭별 완료 여부. 완료된 탭은 초록색으로 칠한다.
 function tabDone(n) {
   const s = S.session;
-  return [!!course()?.rubric_id, !!course(), !!s, !!s?.finished, !!s?.feedback, false][n - 1];
+  return [S.rubrics.some(r => r.id !== "default"), !!course(), !!s, !!s?.finished, !!s?.feedback, false][n - 1];
 }
 function renderNav() {
   $("nav").innerHTML = TABS.map((t, i) => {
