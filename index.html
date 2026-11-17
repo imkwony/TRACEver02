@@ -17,6 +17,8 @@ header .ctx { color: var(--sub); font-size: 13px; margin-left: 16px; }
 nav { display: flex; gap: 4px; padding: 0 20px; background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; }
 nav button { border: 0; background: none; padding: 12px 14px; font: inherit; color: var(--sub); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
 nav button.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+nav button.done { background: #e6f4ec; color: var(--apply); }
+nav button.done.on { color: var(--apply); border-color: var(--apply); }
 main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 60px; }
 section { display: none; }
 section.on { display: block; }
@@ -138,11 +140,40 @@ async function run(btn, fn) {
   btn.disabled = true; btn.textContent = "처리 중…";
   try { await fn(); } catch (e) { toast(e.message); }
   btn.disabled = false; btn.textContent = label;
+  renderNav();
+}
+
+// 입력한 내용 보관. data-keep="이름"이 붙은 칸은 입력할 때마다 S.keep에 저장되고(새로고침해도 남음), 화면을 다시 그릴 때 그 값으로 채운다.
+S.keep = (() => { try { return JSON.parse(localStorage.getItem("trace.keep")) || {}; } catch (e) { return {}; } })();
+function saveKeep() { try { localStorage.setItem("trace.keep", JSON.stringify(S.keep)); } catch (e) {} }
+const kept = k => esc(S.keep[k] ?? "");
+function setKeep(k, v) { S.keep[k] = v; saveKeep(); }
+document.addEventListener("input", e => {
+  const k = e.target.dataset?.keep;
+  if (k) setKeep(k, e.target.value);
+  if (e.target.closest("#tab1") && S.draft && $("rbName")) collectDraft();  // 채점기준표 수정 중인 내용
+});
+// 열려 있는 기록. 새로고침해도 다시 연다.
+function setSession(s) {
+  S.session = s;
+  try { s ? localStorage.setItem("trace.sessionId", s.id) : localStorage.removeItem("trace.sessionId"); } catch (e) {}
+}
+
+// 탭별 완료 여부. 완료된 탭은 초록색으로 칠한다.
+function tabDone(n) {
+  const s = S.session;
+  return [!!course()?.rubric_id, !!course(), !!s, !!s?.finished, !!s?.feedback, false][n - 1];
+}
+function renderNav() {
+  $("nav").innerHTML = TABS.map((t, i) => {
+    const done = tabDone(i + 1);
+    return `<button class="${i + 1 === S.tab ? "on" : ""} ${done ? "done" : ""}" onclick="show(${i + 1})" title="${done ? "완료" : ""}">${done ? "✓ " : ""}${t}</button>`;
+  }).join("");
 }
 
 function show(n) {
   S.tab = n;
-  $("nav").innerHTML = TABS.map((t, i) => `<button class="${i + 1 === n ? "on" : ""}" onclick="show(${i + 1})">${t}</button>`).join("");
+  renderNav();
   document.querySelectorAll("section").forEach((s, i) => s.classList.toggle("on", i + 1 === n));
   const c = course(), st = S.session?.student;
   $("ctx").textContent = [c && "강의: " + c.name, st && S.session && "학생: " + (st.name || "(이름 없음)")].filter(Boolean).join(" · ");
@@ -202,7 +233,7 @@ function renderRubricTab() {
     <div class="card">
       <h2>채점기준표 초안 만들기</h2>
       <label>목표 역량</label>
-      <textarea id="rbComp" placeholder="예: 인공지능 윤리의 핵심 개념을 자신의 전공 사례에 적용해 설명할 수 있다.">${esc(d?.competency || "")}</textarea>
+      <textarea id="rbComp" data-keep="rbComp" placeholder="예: 인공지능 윤리의 핵심 개념을 자신의 전공 사례에 적용해 설명할 수 있다.">${esc(d?.competency || S.keep.rbComp || "")}</textarea>
       <label>수업 자료 폴더 (pdf, pptx, txt, md 파일을 읽습니다. 비워 두면 목표 역량만으로 만듭니다.)</label>
       <div class="row"><input type="file" id="rbFolder" webkitdirectory multiple onchange="pickFolder(this)"><span class="hint" id="rbFolderMsg">${S.rbFiles?.length ? "파일 " + S.rbFiles.length + "개 선택됨" : ""}</span></div>
       <div class="row" style="margin-top:14px">
@@ -344,6 +375,7 @@ async function toggleLive(btn, targetId) {
       let rest = "";
       for (const k of m.tokens || []) k.is_final ? fin += k.text : rest += k.text;
       t.value = base + fin + rest; t.scrollTop = t.scrollHeight;
+      t.dispatchEvent(new Event("input", {bubbles: true}));  // 받아쓴 내용도 보관한다.
     };
     ws.onclose = stop;
     S.rec = {btn, stop};
@@ -362,9 +394,33 @@ function wavBlob(chunks, rate) {
 }
 
 // ---------- 탭 3: 발표 자료 입력 ----------
+// 이 학생에 대해 입력했던 발표 자료. 탭 3(분석 뒤)과 탭 4에서 보여 준다.
+function inputSummary(s, open) {
+  const p = s.presentation, a = p.audio, st = s.student;
+  return `<div class="card"><details ${open ? "open" : ""} style="border:0;padding:0;margin:0"><summary><h2 style="display:inline;font-size:16px">입력한 발표 자료</h2>
+      <span class="hint"> · ${esc(st.name || "(이름 없음)")}${st.number ? " " + esc(st.number) : ""} · ${esc(s.course_name)}</span></summary>
+    <p><b>학생</b> ${esc(st.name || "(이름 없음)")} <span class="hint">학번</span> ${esc(st.number || "-")}</p>
+    <p><b>발표자료</b> ${p.materials_name ? esc(p.materials_name) + ` <span class="hint">(${p.materials_text.length}자${p.materials_file?.passed ? ", pdf 원본 전달" : ""})</span>` : '<span class="hint">없음</span>'}</p>
+    <p><b>발표 스크립트</b> ${a ? `🔊 음성으로 입력 <span class="hint">(${esc(a.file || "")}, 아래는 자동 전사문)</span>` : '<span class="hint">전사문으로 입력</span>'}</p>
+    <pre>${esc(p.transcript)}</pre>
+    ${p.materials_text ? `<details><summary>발표자료에서 뽑은 글자</summary><pre>${esc(p.materials_text)}</pre></details>` : ""}
+  </details></div>`;
+}
+function newStudent() {
+  if (S.rec) return toast("녹음이나 받아쓰기를 먼저 끝내세요.");
+  for (const k of ["stName", "stNum", "transcript", "sample"]) delete S.keep[k];
+  saveKeep();
+  S.materials = {name: "", text: ""}; S.scriptAudio = null; S.unit = null;
+  setSession(null); show(3);
+}
 function renderInputTab() {
   const c = course();
   if (!c) return $("tab3").innerHTML = `<div class="card"><p class="hint">탭 2에서 강의를 먼저 선택하세요.</p></div>`;
+  if (S.session) {  // 분석을 마친 학생: 입력했던 내용을 그대로 보여 준다.
+    return $("tab3").innerHTML = `<div class="card"><div class="row"><b>이 학생의 발표는 아래 내용으로 분석했습니다.</b>
+        <button class="btn" onclick="show(4)">질문으로 가기</button><button class="btn primary" onclick="newStudent()">새 학생 입력하기</button></div></div>
+      ${inputSummary(S.session, true)}`;
+  }
   const modes = ["전사문 텍스트로 넣기", "실시간 받아쓰기", "음성 파일 넣기", "실시간 음성 녹음"];
   $("tab3").innerHTML = `
     <div class="card">
@@ -376,8 +432,8 @@ function renderInputTab() {
     <div class="card">
       <h2>① 학생</h2>
       ${S.samples.length ? `<label>샘플로 시험하기 <span class="hint">고르면 학생 이름, 발표자료, 발표 스크립트가 샘플로 채워집니다.</span></label>
-        <select onchange="loadSample(this.value)"><option value="">샘플 선택 안 함</option>${S.samples.map(n => `<option>${esc(n)}</option>`).join("")}</select>` : ""}
-      <div class="row"><div class="grow"><label>학생 이름</label><input type="text" id="stName"></div><div class="grow"><label>학번</label><input type="text" id="stNum"></div></div>
+        <select onchange="loadSample(this.value)"><option value="">샘플 선택 안 함</option>${S.samples.map(n => `<option ${n === S.keep.sample ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>` : ""}
+      <div class="row"><div class="grow"><label>학생 이름</label><input type="text" id="stName" data-keep="stName" value="${kept("stName")}"></div><div class="grow"><label>학번</label><input type="text" id="stNum" data-keep="stNum" value="${kept("stNum")}"></div></div>
     </div>
     <div class="card">
       <h2>② 발표자료 <span class="hint">선택</span></h2>
@@ -396,7 +452,7 @@ function renderInputTab() {
         <span class="hint">발표를 녹음합니다. 음성이 모델에 그대로 전달됩니다.</span></div></div>
       <p id="scriptMsg" style="margin:8px 0 0"></p>
       <div id="scriptBox"><label>발표 전사문 <span class="hint">여기서 오류를 고칠 수 있습니다.</span></label>
-        <textarea id="transcript" style="min-height:220px"></textarea></div>
+        <textarea id="transcript" data-keep="transcript" style="min-height:220px">${kept("transcript")}</textarea></div>
     </div>
     <div class="card"><div class="row"><button class="btn primary" onclick="run(this, analyze)">주제와 개념 파악</button>
       <span class="hint">발표 내용은 채점하지 않습니다. 질문을 만드는 재료로만 씁니다.</span></div></div>`;
@@ -417,16 +473,17 @@ function scriptStatus() {
 function attachScript(blob, name) { if (blob) { S.scriptAudio = {blob, name}; scriptStatus(); } }
 async function loadScriptFile(input) {
   const file = input.files[0]; if (!file) return;
-  $("transcript").value = await file.text();
+  $("transcript").value = await file.text(); setKeep("transcript", $("transcript").value);
 }
 async function loadSample(name) {
+  setKeep("sample", name);
   if (!name) return;
   try {
     const s = await api("/api/samples/" + encodeURIComponent(name));
-    $("stName").value = s.name;
+    $("stName").value = s.name; setKeep("stName", s.name);
     S.materials = {name: s.materials_name, text: s.materials_text, sample: s.name};
     $("matMsg").textContent = s.materials_name ? `샘플 발표자료: ${s.materials_name}. pdf 원본이 모델에 그대로 전달됩니다.` : "이 샘플에는 발표자료가 없습니다.";
-    setScriptMode(0); $("transcript").value = s.transcript;
+    setScriptMode(0); $("transcript").value = s.transcript; setKeep("transcript", s.transcript);
   } catch (e) { toast(e.message); }
 }
 async function uploadMaterials(input) {
@@ -446,7 +503,10 @@ async function analyze() {
   if (byAudio) fd.append("audio", S.scriptAudio.blob, S.scriptAudio.name); else fd.append("transcript", $("transcript").value);
   if (S.materials.file) fd.append("materials", S.materials.file, S.materials.file.name);
   if (S.materials.sample) fd.append("sample", S.materials.sample);
-  S.session = await api("/api/sessions", fd, true);
+  setSession(await api("/api/sessions", fd, true));
+  // 입력 칸은 다음 학생을 위해 비운다. 입력했던 내용은 기록에 남아 탭 3, 4의 '입력한 발표 자료'로 보인다.
+  for (const k of ["stName", "stNum", "transcript", "sample"]) delete S.keep[k];
+  saveKeep();
   S.materials = {name: "", text: ""}; S.scriptAudio = null; S.unit = null;
   show(4);
 }
@@ -475,12 +535,13 @@ function analysisCard(s) {
     ${sus.length ? `<h3>오개념 의심 지점 (판정이 아니라 질문 재료)</h3>${sus.map(m => `<div class="ev"><span class="chip t">${esc(unitName(String(m.unit)))}</span><blockquote>${esc(m.quote)}</blockquote><span class="hint">${esc(m.why)}</span></div>`).join("")}` : ""}
   </div>`;
 }
+const ansKey = (t, i) => `ans:${S.session.id}:${t.turn}:${i}`;  // 제출 전 답변 보관 이름
 function turnCard(t, editable) {
   return `<div class="card"><h2>${t.turn}턴 질문</h2>
     ${t.questions.map((q, i) => `<div class="qbox">
       <div class="q">Q${i + 1}. ${esc(q.text)}</div>
       <div>${q.targets.map(u => `<span class="chip t">${unitName(u)}</span>`).join("")} <span class="hint">${esc(q.intent)}</span></div>
-      ${editable ? `<label>답변 전사문</label><textarea id="ans${i}"></textarea>
+      ${editable ? `<label>답변 전사문</label><textarea id="ans${i}" data-keep="${ansKey(t, i)}">${kept(ansKey(t, i))}</textarea>
         <div class="row" style="margin-top:6px"><button class="btn" onclick="liveAnswer(this, ${i})">● 실시간 받아쓰기</button>
           <button class="btn" onclick="toggleRec(this, b => attachAnswer(${i}, b, 'recording.wav'))">● 실시간 음성 녹음</button>
           <span class="hint">음성 파일 넣기(wav, mp3):</span><input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" onchange="attachAnswer(${i}, this.files[0], this.files[0]?.name)"></div>
@@ -526,14 +587,16 @@ function renderQuestionTab() {
   else if (!waiting) next = `<div class="card"><div class="row"><button class="btn primary" onclick="run(this, makeQuestions)">${s.turns.length + 1}턴 질문 생성</button>
     ${s.turns.length ? `<button class="btn" onclick="show(5)">지금까지의 그래프 보기</button>` : ""}
     <span class="hint">${s.turns.length ? "미확인 항목, 채점자 의견이 갈린 항목, 확실하지 않은 오개념이 남아 2턴을 진행합니다." : "모든 학생이 최소 1턴은 질문을 받습니다. 턴당 최대 3개."}</span></div></div>`;
-  $("tab4").innerHTML = analysisCard(s) + s.turns.map((t, i) => turnCard(t, waiting && i === s.turns.length - 1)).join("") + next;
+  $("tab4").innerHTML = inputSummary(s, false) + analysisCard(s) + s.turns.map((t, i) => turnCard(t, waiting && i === s.turns.length - 1)).join("") + next;
 }
-async function makeQuestions() { S.session = await api(`/api/sessions/${S.session.id}/questions`, {}); S.ansAudio = {}; renderQuestionTab(); }
+async function makeQuestions() { setSession(await api(`/api/sessions/${S.session.id}/questions`, {})); S.ansAudio = {}; renderQuestionTab(); }
 async function submitAnswers() {
-  const n = S.session.turns[S.session.turns.length - 1].questions.length, fd = new FormData();
+  const t = S.session.turns[S.session.turns.length - 1], n = t.questions.length, fd = new FormData();
   fd.append("answers", JSON.stringify(Array.from({length: n}, (_, i) => S.ansAudio[i] ? "" : $("ans" + i).value)));
   for (const [i, a] of Object.entries(S.ansAudio)) fd.append("audio" + i, a.blob, a.name);
-  S.session = await api(`/api/sessions/${S.session.id}/answers`, fd, true);
+  const keys = Array.from({length: n}, (_, i) => ansKey(t, i));
+  setSession(await api(`/api/sessions/${S.session.id}/answers`, fd, true));
+  keys.forEach(k => delete S.keep[k]); saveKeep();  // 제출한 답변은 기록에 남는다.
   S.ansAudio = {};
   S.session.finished ? show(5) : renderQuestionTab();
 }
@@ -614,8 +677,8 @@ async function renderResultTab() {
     </div>`;
 }
 function pickUnit(u) { S.unit = u; renderResultTab(); }
-async function override() { S.session = await api(`/api/sessions/${S.session.id}/override`, {unit: S.unit, status: $("ovStatus").value, note: $("ovNote").value}); renderResultTab(); toast("교수자 판정으로 저장했습니다."); }
-async function remakeFeedback() { S.session = await api(`/api/sessions/${S.session.id}/feedback`, {}); renderResultTab(); }
+async function override() { setSession(await api(`/api/sessions/${S.session.id}/override`, {unit: S.unit, status: $("ovStatus").value, note: $("ovNote").value})); renderResultTab(); toast("교수자 판정으로 저장했습니다."); }
+async function remakeFeedback() { setSession(await api(`/api/sessions/${S.session.id}/feedback`, {})); renderResultTab(); }
 
 // ---------- 탭 6: 기록 ----------
 async function renderRecordTab() {
@@ -638,7 +701,7 @@ async function exportRecord(id) {
   a.href = URL.createObjectURL(await Engine.exportSession(id)); a.download = id + ".json"; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
-async function openRecord(id) { S.session = await api("/api/sessions/" + id); S.unit = null; show(S.session.finished ? 5 : 4); }
+async function openRecord(id) { setSession(await api("/api/sessions/" + id)); S.unit = null; show(S.session.finished ? 5 : 4); }
 
 (async function init() {
   let units;
@@ -646,7 +709,10 @@ async function openRecord(id) { S.session = await api("/api/sessions/" + id); S.
   [S.rubrics, S.courses, S.samples, S.settings, units] = await Promise.all([api("/api/rubrics"), api("/api/courses"), api("/api/samples"), api("/api/settings"), api("/api/units")]);
   ({concepts: CONCEPTS, principles: PRINCIPLES, elements: ELEMENTS, pairs: PAIRS} = units);
   if (!course()) S.courseId = S.courses[0]?.id;
-  show(3);
+  // 새로고침 전에 열려 있던 기록을 다시 연다.
+  const lastId = (() => { try { return localStorage.getItem("trace.sessionId"); } catch (e) { return null; } })();
+  if (lastId) { try { setSession(await api("/api/sessions/" + lastId)); } catch (e) { setSession(null); } }
+  show(S.session ? (S.session.finished ? 5 : 4) : 3);
   const s = await api("/api/settings");
   if (!s.has_key) openSettings();
 })();
