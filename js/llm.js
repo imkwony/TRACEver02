@@ -18,6 +18,9 @@
     "항목 이름은 위 표기를 글자 그대로 쓴다."
   );
   const JSON_ONLY = "설명이나 코드블록 표시 없이 JSON 객체 하나만 출력한다.";
+  // 속도: 모든 호출에 붙이는 지시와 사고 예산. baze는 Gemini·GPT 계열에 reasoning_effort를 받는다("low"가 최소, Gemini는 약 1,024토큰).
+  const SPEED_RULE = "[속도 우선] 생각(추론)은 최소한으로 하고 바로 답한다. 출력은 필요한 내용만 짧게 쓴다. 문장은 짧게, 군더더기 없이 쓴다.";
+  const MIN_EFFORT = model => (/^(gemini|gpt|o\d)/i.test(model) ? {reasoning_effort: "low"} : {});
 
   class LLMError extends Error {}
 
@@ -57,10 +60,16 @@
   async function chat(s, system, user, files) {
     let content = user;
     if (files && files.length) content = [{type: "text", text: user}].concat(await Promise.all(files.map(([n, b]) => filePart(n, b))));
-    const data = await request("POST", s, "/chat/completions/", {json: {
-      model: s.model, max_tokens: 8000,
-      messages: [{role: "system", content: system}, {role: "user", content}],
-    }});
+    const body = {model: s.model, max_tokens: 8000, ...MIN_EFFORT(s.model),
+      messages: [{role: "system", content: SPEED_RULE + "\n" + system}, {role: "user", content}]};
+    let data;
+    try { data = await request("POST", s, "/chat/completions/", {json: body}); }
+    catch (e) {
+      // 사고 예산을 받지 않는 모델이면 그 설정만 빼고 한 번 더 보낸다.
+      if (!body.reasoning_effort || !String(e.message).startsWith("baze 오류 400")) throw e;
+      delete body.reasoning_effort;
+      data = await request("POST", s, "/chat/completions/", {json: body});
+    }
     try { return data.choices[0].message.content || ""; }
     catch (e) { throw new LLMError(`baze 응답 형식이 예상과 다릅니다: ${JSON.stringify(data).slice(0, 300)}`); }
   }
@@ -196,10 +205,10 @@
       "학생 발표를 읽고 질문을 준비하기 위한 정보를 뽑는다. 발표를 채점하거나 이해 수준을 판정하지 않는다.\n" +
       `대상 개념: ${CONCEPTS.join(", ")}\n` +
       "출력 형식:\n" +
-      '{"topic": "발표 주제 한 줄", "summary": "발표 요약 서너 문장", ' +
+      '{"topic": "발표 주제 한 줄", "summary": "발표 요약 두 문장", ' +
       '"mentioned_concepts": ["발표에서 실제로 다룬 개념"], ' +
       '"most_related_concept": "발표에서 다루지 않은 개념 중 주제와 가장 관련 깊은 개념 하나", ' +
-      '"concept_notes": {"<개념>": "발표에서 이 개념을 어떻게 말했는지 한두 문장"}, ' +
+      '"concept_notes": {"<개념>": "발표에서 이 개념을 어떻게 말했는지 한 문장"}, ' +
       '"suspected_misconceptions": [{"unit": "<개념 또는 개념A|개념B>", "quote": "발표 원문 그대로", "why": "왜 오개념으로 의심되는지"}]}\n' +
       "개념 이름을 직접 말하지 않았더라도 내용상 분명히 다뤘으면 mentioned_concepts에 넣는다. " +
       "개념 이름은 위 대상 개념의 표기를 그대로 쓴다('견고성과 안전성'처럼 묶어 말했으면 안전성, 견고성을 각각 넣는다)."
@@ -271,7 +280,7 @@
       `- '${NOT_UNDERSTOOD}'의 quote는 모른다고 한 말이나 엉뚱한 대답 부분을 그대로 옮긴다("몰라요"처럼 짧아도 된다).\n` +
       "- certain은 판정이 분명하면 true, 답변이 짧거나 모호해 확신하기 어려우면 false.\n" +
       "출력 형식:\n" +
-      '{"judgments": [{"unit": "항목 이름", "status": "상태", "quote": "답변 원문 인용", "misconception_index": 0, "reason": "판정 이유 한두 문장", "certain": true}]}'
+      '{"judgments": [{"unit": "항목 이름", "status": "상태", "quote": "답변 원문 인용", "misconception_index": 0, "reason": "판정 이유 한 문장", "certain": true}]}'
     );
     const qa = questions.map((q, i) => ({question: q.text, targets: q.targets, answer: answers[i]}));
     let user = `발표 주제: ${topic}\n\n질문과 답변 전사문:\n${j(qa)}\n\n채점기준표:\n${j(rubricView(rubric, units))}`;
@@ -292,9 +301,9 @@
       "구술 질의응답의 최종 판정과 근거를 보고 학생에게 줄 피드백을 쓴다.\n" +
       "주어진 판정과 근거에 있는 내용만 쓴다. 판정을 바꾸거나 새로 판단하지 않는다.\n" +
       "'오개념', '이해 못함', '미확인' 항목은 무엇을 다시 공부해야 하는지 구체적으로 쓰고('이해 못함'은 잘못 알았다고 쓰지 말고 아직 이해하지 못한 부분으로 쓴다), '이해 수준' 항목은 적용 수준으로 가려면 무엇이 필요한지 쓴다. 최종 상태에 없는 항목은 다루지 않는다.\n" +
-      "학생에게 직접 말하는 정중한 문체로, 항목마다 두세 문장으로 쓴다.\n" +
+      "학생에게 직접 말하는 정중한 문체로, 항목마다 한두 문장으로 짧게 쓴다.\n" +
       "출력 형식:\n" +
-      '{"overall": "전체 총평 두세 문장", "items": [{"unit": "항목 이름", "text": "더 공부할 부분"}]}'
+      '{"overall": "전체 총평 한두 문장", "items": [{"unit": "항목 이름", "text": "더 공부할 부분"}]}'
     );
     const final = Object.fromEntries(Object.entries(state).map(([name, u]) => [name, {
       status: u.status, source: u.source, note: u.note,
