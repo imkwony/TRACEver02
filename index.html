@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>발표 질의응답 평가</title>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #fff; --line: #dfe2e8; --text: #1d2330; --sub: #667085; --accent: #2b4c9b;
+  --apply: #1a7f4b; --understand: #2f6fde; --mis: #d1453b; --unknown: #d99a00; --na: #b8bcc4;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 "Pretendard", "Malgun Gothic", system-ui, sans-serif; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; background: var(--card); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 17px; margin: 0; }
+header .ctx { color: var(--sub); font-size: 13px; margin-left: 16px; }
+nav { display: flex; gap: 4px; padding: 0 20px; background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav button { border: 0; background: none; padding: 12px 14px; font: inherit; color: var(--sub); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
+nav button.on { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 60px; }
+section { display: none; }
+section.on { display: block; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+.card h2 { font-size: 16px; margin: 0 0 12px; }
+.card h3 { font-size: 14px; margin: 14px 0 6px; }
+label { display: block; font-size: 13px; color: var(--sub); margin: 10px 0 4px; }
+input[type=text], input[type=password], select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; font: inherit; background: #fff; color: var(--text); }
+textarea { min-height: 90px; resize: vertical; }
+button.btn { border: 1px solid var(--line); background: #fff; color: var(--text); padding: 7px 14px; border-radius: 7px; font: inherit; cursor: pointer; }
+button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.btn:disabled { opacity: .55; cursor: wait; }
+button.btn.rec { background: var(--mis); border-color: var(--mis); color: #fff; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row > .grow { flex: 1; min-width: 180px; }
+.hint { color: var(--sub); font-size: 13px; font-weight: 400; }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { flex: 1; min-width: 150px; border: 0; border-right: 1px solid var(--line); background: #fff; padding: 9px 10px; font: inherit; color: var(--sub); cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--accent); color: #fff; font-weight: 600; }
+.mode { margin: 12px 0 4px; }
+.chip { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; color: #fff; background: var(--na); margin-right: 4px; white-space: nowrap; }
+.chip.t { background: #eef1f6; color: var(--text); }
+.s-apply { background: var(--apply); } .s-understand { background: var(--understand); }
+.s-mis { background: var(--mis); } .s-unknown { background: var(--unknown); } .s-na { background: var(--na); }
+.need { color: var(--mis); font-weight: 600; font-size: 13px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 14px; vertical-align: top; }
+th { color: var(--sub); font-weight: 500; font-size: 13px; }
+tr.pick { cursor: pointer; } tr.pick:hover { background: #f7f8fb; }
+details { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+summary { cursor: pointer; font-weight: 600; }
+.qbox { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+.qbox .q { font-weight: 600; margin-bottom: 4px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+svg text { font: 600 12.5px "Malgun Gothic", system-ui, sans-serif; fill: #fff; pointer-events: none; text-anchor: middle; dominant-baseline: central; }
+svg .node, svg .edge { cursor: pointer; }
+svg .hit { stroke: transparent; stroke-width: 18; cursor: pointer; }
+.ev { border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin: 10px 0; }
+.ev blockquote { margin: 4px 0; padding: 6px 10px; background: #f6f7fa; border-radius: 6px; }
+.modal { position: fixed; inset: 0; background: rgba(20, 25, 40, .45); display: none; align-items: center; justify-content: center; z-index: 10; }
+.modal.on { display: flex; }
+.modal .card { width: min(480px, 92vw); margin: 0; }
+#toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #1d2330; color: #fff; padding: 10px 18px; border-radius: 8px; display: none; max-width: 80vw; z-index: 20; }
+pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; background: #f6f7fa; padding: 10px; border-radius: 6px; max-height: 320px; overflow: auto; }
+</style>
+</head>
+<body>
+<header>
+  <div class="row"><h1>발표 기반 질의응답 평가</h1><span class="ctx" id="ctx"></span></div>
+  <button class="btn" onclick="openSettings()">⚙ 설정</button>
+</header>
+<nav id="nav"></nav>
+<main>
+  <section id="tab1"></section>
+  <section id="tab2"></section>
+  <section id="tab3"></section>
+  <section id="tab4"></section>
+  <section id="tab5"></section>
+  <section id="tab6"></section>
+</main>
+
+<div class="modal" id="settings">
+  <div class="card">
+    <h2>설정</h2>
+    <label>baze API 키 <span id="keyHint"></span></label>
+    <input type="password" id="setKey" placeholder="새 키를 넣을 때만 입력" autocomplete="off">
+    <label>채점자 1 모델 <span class="hint">발표 분석, 질문 생성, 피드백 작성도 맡습니다.</span></label>
+    <select id="setModel"></select>
+    <label>채점자 2 모델</label>
+    <div class="row"><select class="grow" id="setModel2"></select><button class="btn" onclick="run(this, loadModels)">전체 목록 불러오기</button></div>
+    <label>음성 전사 모델</label>
+    <input type="text" id="setStt">
+    <p class="hint" id="setMsg"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" onclick="run(this, testSettings)">저장 후 테스트 호출</button>
+      <button class="btn primary" onclick="run(this, async () => { await saveSettings(); closeSettings(); })">저장</button>
+      <button class="btn" onclick="closeSettings()">닫기</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/llm.js"></script>
+<script src="js/api.js"></script>
+<script>
+const TABS = ["1. 채점기준표 만들기", "2. 강의 선택 & 채점기준표 넣기", "3. 학생 발표 자료 입력", "4. 질문 생성", "5. 학생 수준 및 피드백", "6. 기록"];
+// 판정 항목은 서버(core.py)가 정한다. 개념 7개, 원칙 5개, 두 요소로 된 원칙, 원칙 사이의 관계 10개.
+let CONCEPTS = [], PRINCIPLES = [], ELEMENTS = {}, PAIRS = [];
+const STATUSES = ["적용 수준", "이해 수준", "오개념", "미확인"];
+const CLS = {"적용 수준": "apply", "이해 수준": "understand", "오개념": "mis", "미확인": "unknown"};
+const COLOR = {"적용 수준": "#1a7f4b", "이해 수준": "#2f6fde", "오개념": "#d1453b", "미확인": "#d99a00"};
+const ABSENT = "#b8bcc4";  // 학생이 말하지 않아 상태표에 없는 항목
+
+const S = { tab: 1, rubrics: [], courses: [], samples: [], settings: {}, extraModels: [], rubric: null, courseId: localStorage.getItem("courseId"), session: null, unit: null,
+            draft: null, materials: {name: "", text: ""}, rec: null, scriptAudio: null, ansAudio: {} };
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const unitName = u => u.replace("|", " ↔ ");
+const chip = st => `<span class="chip s-${CLS[st]}">${st}</span>`;
+const course = () => S.courses.find(c => c.id === S.courseId);
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.style.display = "none", 5000);
+}
+
+// 서버 없이 브라우저 안에서 처리한다(js/api.js).
+const api = (path, body) => Engine.api(path, body);
+
+// 버튼을 잠그고 작업을 실행한다. 실패하면 이유를 화면에 알린다.
+async function run(btn, fn) {
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "처리 중…";
+  try { await fn(); } catch (e) { toast(e.message); }
+  btn.disabled = false; btn.textContent = label;
+}
+
+function show(n) {
+  S.tab = n;
+  $("nav").innerHTML = TABS.map((t, i) => `<button class="${i + 1 === n ? "on" : ""}" onclick="show(${i + 1})">${t}</button>`).join("");
+  document.querySelectorAll("section").forEach((s, i) => s.classList.toggle("on", i + 1 === n));
+  const c = course(), st = S.session?.student;
+  $("ctx").textContent = [c && "강의: " + c.name, st && S.session && "학생: " + (st.name || "(이름 없음)")].filter(Boolean).join(" · ");
+  [renderRubricTab, renderCourseTab, renderInputTab, renderQuestionTab, renderResultTab, renderRecordTab][n - 1]();
+}
+
+// ---------- 설정 ----------
+const MODELS = [["claude-sonnet-5-5", "Claude Sonnet 5.5"], ["claude-opus-5-5", "Claude Opus 5.5"], ["claude-haiku-5-5", "Claude Haiku 5.5"],
+  ["gpt-6-sol", "GPT-6 Sol"], ["gpt-6.1-terra", "GPT-6.1 Terra"], ["gpt-6-luna", "GPT-6 Luna"], ["gpt-audio-1.5", "GPT Audio 1.5"],
+  ["gemini-4-hydrogen", "Gemini 4 Hydrogen"], ["gemini-4-argon", "Gemini 4 Argon"], ["gemini-3.1-pro-preview", "Gemini 3.1 Pro"],
+  ["gemini-3.8-flash", "Gemini 3.8 Flash"], ["gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"]];
+// 기본 모델 목록에 없는 모델 ID는 뒤에 덧붙여 보여준다.
+function modelOptions(selected) {
+  const known = new Set(MODELS.map(m => m[0]));
+  const all = MODELS.concat([...new Set([selected, ...S.extraModels])].filter(id => id && !known.has(id)).map(id => [id, id]));
+  return all.map(([id, name]) => `<option value="${esc(id)}" ${id === selected ? "selected" : ""}>${esc(name)}</option>`).join("");
+}
+function fillModels(s) { $("setModel").innerHTML = modelOptions(s.model); $("setModel2").innerHTML = modelOptions(s.model2); }
+// 탭 3의 채점자 선택. 바꾸면 바로 저장한다.
+async function saveGraders() {
+  try { S.settings = await api("/api/settings", {model: $("g1").value, model2: $("g2").value}); }
+  catch (e) { toast(e.message); }
+}
+async function openSettings() {
+  const s = S.settings = await api("/api/settings");
+  fillModels(s); $("setStt").value = s.stt_model; $("setKey").value = "";
+  $("keyHint").textContent = s.has_key ? "(저장됨, 끝자리 " + s.key_hint + ")" : "(아직 없음)";
+  $("setMsg").textContent = "키는 이 브라우저(localStorage)에만 저장되고, baze API에 직접 보냅니다. 공용 컴퓨터에서는 쓰지 마세요.";
+  $("settings").classList.add("on");
+}
+function closeSettings() { $("settings").classList.remove("on"); }
+async function saveSettings() {
+  const s = S.settings = await api("/api/settings", {api_key: $("setKey").value, model: $("setModel").value, model2: $("setModel2").value, stt_model: $("setStt").value});
+  if (S.tab === 3) { $("g1").innerHTML = modelOptions(s.model); $("g2").innerHTML = modelOptions(s.model2); }
+  $("setKey").value = ""; $("keyHint").textContent = s.has_key ? "(저장됨, 끝자리 " + s.key_hint + ")" : "(아직 없음)";
+}
+async function testSettings() {
+  await saveSettings();
+  $("setMsg").textContent = "테스트 호출 중…";
+  try { const r = await api("/api/settings/test", {}); $("setMsg").textContent = "테스트 호출 성공. 모델 응답: " + r.reply; }
+  catch (e) { $("setMsg").textContent = "테스트 호출 실패: " + e.message; }
+}
+async function loadModels() {
+  await saveSettings();
+  $("setMsg").textContent = "모델 목록을 불러오는 중…";
+  try {
+    const models = S.extraModels = await api("/api/models");
+    fillModels({model: $("setModel").value, model2: $("setModel2").value});
+    $("setMsg").textContent = "baze에서 모델 " + models.length + "개를 불러와 선택 목록 뒤에 추가했습니다.";
+  } catch (e) { $("setMsg").textContent = "모델 목록을 불러오지 못했습니다: " + e.message; }
+}
+
+// ---------- 탭 1: 채점기준표 만들기 ----------
+function renderRubricTab() {
+  const d = S.draft;
+  $("tab1").innerHTML = `
+    <div class="card">
+      <h2>채점기준표 초안 만들기</h2>
+      <label>목표 역량</label>
+      <textarea id="rbComp" placeholder="예: 인공지능 윤리의 핵심 개념을 자신의 전공 사례에 적용해 설명할 수 있다.">${esc(d?.competency || "")}</textarea>
+      <label>수업 자료 폴더 (pdf, pptx, txt, md 파일을 읽습니다. 비워 두면 목표 역량만으로 만듭니다.)</label>
+      <div class="row"><input type="file" id="rbFolder" webkitdirectory multiple onchange="pickFolder(this)"><span class="hint" id="rbFolderMsg">${S.rbFiles?.length ? "파일 " + S.rbFiles.length + "개 선택됨" : ""}</span></div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn primary" onclick="run(this, genRubric)">초안 생성</button>
+        <span class="hint">또는 저장된 기준표 불러와 수정:</span>
+        <select id="rbLoad" style="width:auto" onchange="loadRubricDraft(this.value)"><option value="">선택</option>${S.rubrics.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join("")}</select>
+      </div>
+      <p class="hint" id="rbMsg"></p>
+    </div>
+    ${d ? `<div class="card">
+      <h2>채점기준표 수정</h2>
+      <div class="row"><input class="grow" type="text" id="rbName" placeholder="채점기준표 이름" value="${esc(d.name || "")}"><button class="btn primary" onclick="run(this, saveRubric)">로컬 저장</button></div>
+      <h3>개념 ${CONCEPTS.length}개</h3>${CONCEPTS.map(u => rubricEditor("concepts", u)).join("")}
+      <h3>원칙 간 관계 ${PAIRS.length}개</h3>${PAIRS.map(u => rubricEditor("relations", u)).join("")}
+    </div>` : ""}`;
+}
+function rubricEditor(group, unit) {
+  const e = S.draft[group][unit], f = (k, label, v) => `<label>${label}</label><textarea data-g="${group}" data-u="${unit}" data-k="${k}" style="min-height:58px">${esc(v)}</textarea>`;
+  return `<details><summary>${unitName(unit)}</summary>
+    ${f("definition", group === "concepts" ? "정의" : "두 개념의 차이와 관계", e.definition)}
+    ${f("understand", "이해 수준 기준", e.understand)}
+    ${f("apply", "적용 수준 기준", e.apply)}
+    ${f("misconceptions", "흔한 오개념 (한 줄에 하나)", e.misconceptions.join("\n"))}</details>`;
+}
+function collectDraft() {
+  document.querySelectorAll("#tab1 textarea[data-u]").forEach(t => {
+    const v = t.value.trim();
+    S.draft[t.dataset.g][t.dataset.u][t.dataset.k] = t.dataset.k === "misconceptions" ? v.split("\n").map(x => x.trim()).filter(Boolean) : v;
+  });
+  S.draft.name = $("rbName").value; S.draft.competency = $("rbComp").value;
+}
+function pickFolder(input) {
+  S.rbFiles = [...input.files].filter(f => /\.(pdf|pptx|txt|md)$/i.test(f.name));
+  $("rbFolderMsg").textContent = `읽을 수 있는 파일 ${S.rbFiles.length}개 선택됨`;
+}
+async function genRubric() {
+  const r = await api("/api/rubrics/generate", {competency: $("rbComp").value, files: S.rbFiles || []});
+  S.draft = {id: null, name: "", competency: r.competency, concepts: r.concepts, relations: r.relations};
+  renderRubricTab();
+  $("rbMsg").textContent = `초안을 만들었습니다. 읽은 자료 ${r.files.length}개${r.files.length ? " (" + r.files.join(", ") + ")" : ""}.`
+    + (r.filled_from_default.length ? ` 모델이 빠뜨려 임시 기준으로 채운 항목: ${r.filled_from_default.map(unitName).join(", ")}` : "");
+}
+async function loadRubricDraft(id) {
+  if (!id) return;
+  const r = await api("/api/rubrics/" + id);
+  S.draft = {...r, id: id === "default" ? null : r.id, name: id === "default" ? "" : r.name};
+  renderRubricTab();
+}
+async function saveRubric() {
+  collectDraft();
+  const r = await api("/api/rubrics", S.draft);
+  S.draft.id = r.id; S.rubrics = await api("/api/rubrics"); S.rubric = null;
+  toast("저장했습니다: " + r.name + " (이 브라우저에 저장)");
+}
+
+// ---------- 탭 2: 강의 선택 ----------
+function renderCourseTab() {
+  const opts = sel => S.rubrics.map(r => `<option value="${r.id}" ${r.id === sel ? "selected" : ""}>${esc(r.name)}</option>`).join("");
+  const c = course();
+  $("tab2").innerHTML = `
+    <div class="card">
+      <h2>강의 선택</h2>
+      <label>강의</label>
+      <select id="cSel" onchange="onCourseSelect(this.value)">
+        ${S.courses.map(x => `<option value="${x.id}" ${x.id === S.courseId ? "selected" : ""}>${esc(x.name)}</option>`).join("")}
+        <option value="">직접 작성…</option>
+      </select>
+      <div class="row" id="cNew" style="display:none;margin-top:10px">
+        <input class="grow" type="text" id="cName" placeholder="강의 이름을 직접 입력 (예: 인공지능 윤리 02반)">
+        <button class="btn primary" onclick="run(this, addCourse)">목록에 추가하고 선택</button>
+      </div>
+    </div>
+    ${c ? `<div class="card">
+      <h2>채점기준표 넣기</h2>
+      <label>${esc(c.name)}에서 사용할 채점기준표</label>
+      <select onchange="setCourseRubric('${c.id}', this.value)">${opts(c.rubric_id)}</select>
+    </div>` : ""}`;
+}
+function onCourseSelect(id) {
+  if (id) return pickCourse(id);
+  $("cNew").style.display = "flex"; $("cName").focus();
+}
+function pickCourse(id) { S.courseId = id; localStorage.setItem("courseId", id); show(2); }
+async function addCourse() {
+  const before = new Set(S.courses.map(c => c.id));
+  S.courses = await api("/api/courses", {name: $("cName").value, rubric_id: "default"});
+  pickCourse(S.courses.find(c => !before.has(c.id)).id);
+}
+async function setCourseRubric(id, rubricId) {
+  try { S.courses = await api("/api/courses", {id, name: S.courses.find(c => c.id === id).name, rubric_id: rubricId}); toast("채점기준표를 바꿨습니다."); }
+  catch (e) { toast(e.message); }
+}
+
+// ---------- 음성 ----------
+const mb = blob => (blob.size / 1e6).toFixed(1) + "MB";
+// 마이크 녹음. baze가 webm을 받지 않아 브라우저에서 wav로 만든다.
+async function startMic(onChunk) {
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  const ctx = new AudioContext({sampleRate: 16000});
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  proc.onaudioprocess = e => onChunk(new Float32Array(e.inputBuffer.getChannelData(0)));
+  ctx.createMediaStreamSource(stream).connect(proc); proc.connect(ctx.destination);
+  return {rate: ctx.sampleRate, stop: async () => { stream.getTracks().forEach(t => t.stop()); await ctx.close(); }};
+}
+// 녹음을 끝내면 onDone(wav 음성)을 부른다. 음성은 전사하지 않고 그대로 첨부된다.
+async function toggleRec(btn, onDone) {
+  if (S.rec && S.rec.btn !== btn) return toast("다른 녹음이 진행 중입니다.");
+  if (!S.rec) {
+    try {
+      const chunks = [], mic = await startMic(c => chunks.push(c));
+      S.rec = {btn, mic, chunks, label: btn.textContent};
+      btn.textContent = "■ 녹음 끝내기"; btn.classList.add("rec");
+    } catch (e) { toast("마이크를 쓸 수 없습니다: " + e.message); }
+    return;
+  }
+  const {mic, chunks, label} = S.rec; S.rec = null;
+  await mic.stop();
+  btn.classList.remove("rec"); btn.textContent = label;
+  onDone(wavBlob(chunks, mic.rate));
+}
+// 실시간 받아쓰기. 말하는 동안 전사문이 입력 칸에 들어온다.
+async function toggleLive(btn, targetId) {
+  if (S.rec && S.rec.btn !== btn) return toast("다른 녹음이 진행 중입니다.");
+  if (S.rec) return S.rec.stop();
+  try {
+    const t = $(targetId), base = t.value ? t.value + "\n" : "", label = btn.textContent;
+    let fin = "", ws = null;
+    const mic = await startMic(c => { if (ws && ws.readyState === 1) ws.send(Int16Array.from(c, x => Math.max(-1, Math.min(1, x)) * 32767).buffer); });
+    try { ws = await Engine.openLiveSocket(mic.rate); } catch (e) { await mic.stop(); throw e; }
+    const stop = async () => {
+      if (!S.rec || S.rec.btn !== btn) return;
+      S.rec = null; await mic.stop();
+      if (ws.readyState === 1) ws.send("");  // baze 종료 신호: 빈 텍스트 프레임
+      btn.classList.remove("rec"); btn.textContent = label;
+    };
+    ws.onmessage = e => {
+      const m = JSON.parse(e.data);
+      if (m.error || m.error_message) return toast(m.error || "실시간 받아쓰기 오류: " + m.error_message);
+      let rest = "";
+      for (const k of m.tokens || []) k.is_final ? fin += k.text : rest += k.text;
+      t.value = base + fin + rest; t.scrollTop = t.scrollHeight;
+    };
+    ws.onclose = stop;
+    S.rec = {btn, stop};
+    btn.textContent = "■ 받아쓰기 끝내기"; btn.classList.add("rec");
+  } catch (e) { toast("실시간 받아쓰기를 시작하지 못했습니다: " + e.message); }
+}
+function wavBlob(chunks, rate) {
+  const n = chunks.reduce((a, c) => a + c.length, 0), v = new DataView(new ArrayBuffer(44 + n * 2));
+  const str = (o, s) => [...s].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
+  str(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); str(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, n * 2, true);
+  let o = 44;
+  for (const c of chunks) for (const x of c) { v.setInt16(o, Math.max(-1, Math.min(1, x)) * 32767, true); o += 2; }
+  return new Blob([v], {type: "audio/wav"});
+}
+
+// ---------- 탭 3: 발표 자료 입력 ----------
+function renderInputTab() {
+  const c = course();
+  if (!c) return $("tab3").innerHTML = `<div class="card"><p class="hint">탭 2에서 강의를 먼저 선택하세요.</p></div>`;
+  const modes = ["전사문 텍스트로 넣기", "실시간 받아쓰기", "음성 파일 넣기", "실시간 음성 녹음"];
+  $("tab3").innerHTML = `
+    <div class="card">
+      <h2>채점자 모델 <span class="hint">두 채점자의 판정이 같은 항목만 확정됩니다. 다르면 질문으로 다시 확인합니다.</span></h2>
+      <div class="row"><div class="grow"><label>채점자 1</label><select id="g1" onchange="saveGraders()">${modelOptions(S.settings.model)}</select></div>
+        <div class="grow"><label>채점자 2</label><select id="g2" onchange="saveGraders()">${modelOptions(S.settings.model2)}</select></div></div>
+      <p class="hint" style="margin-bottom:0">채점자 1 모델이 발표 분석, 질문 생성, 피드백 작성도 맡습니다. 음성과 pdf를 그대로 받는 모델은 Gemini 계열과 GPT Audio 1.5입니다.</p>
+    </div>
+    <div class="card">
+      <h2>① 학생</h2>
+      ${S.samples.length ? `<label>샘플로 시험하기 <span class="hint">고르면 학생 이름, 발표자료, 발표 스크립트가 샘플로 채워집니다.</span></label>
+        <select onchange="loadSample(this.value)"><option value="">샘플 선택 안 함</option>${S.samples.map(n => `<option>${esc(n)}</option>`).join("")}</select>` : ""}
+      <div class="row"><div class="grow"><label>학생 이름</label><input type="text" id="stName"></div><div class="grow"><label>학번</label><input type="text" id="stNum"></div></div>
+    </div>
+    <div class="card">
+      <h2>② 발표자료 <span class="hint">선택</span></h2>
+      <div class="row"><input type="file" accept=".pdf,.pptx,.txt,.md" onchange="uploadMaterials(this)"><span class="hint" id="matMsg">${S.materials.name ? esc(S.materials.name) + " · " + S.materials.text.length + "자" : "pdf, pptx, txt, md 파일"}</span></div>
+    </div>
+    <div class="card">
+      <h2>③ 발표 스크립트 <span class="hint">필수</span></h2>
+      <div class="seg">${modes.map((m, i) => `<button id="modeBtn${i}" onclick="setScriptMode(${i})">${i + 1}) ${m}</button>`).join("")}</div>
+      <div class="mode" id="mode0"><div class="row"><input type="file" accept=".txt,.md,text/plain" onchange="loadScriptFile(this)">
+        <span class="hint">텍스트 파일(txt, md)을 넣거나, 아래 칸에 직접 입력하거나 붙여넣으세요.</span></div></div>
+      <div class="mode" id="mode1"><div class="row"><button class="btn" onclick="toggleLive(this, 'transcript')">● 실시간 받아쓰기 시작</button>
+        <span class="hint">발표하는 동안 전사문이 아래 칸에 바로 들어옵니다. 한 번에 최대 60분.</span></div></div>
+      <div class="mode" id="mode2"><div class="row"><input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" onchange="attachScript(this.files[0], this.files[0]?.name)">
+        <span class="hint">wav 또는 mp3. 음성이 모델에 그대로 전달됩니다.</span></div></div>
+      <div class="mode" id="mode3"><div class="row"><button class="btn" onclick="toggleRec(this, b => attachScript(b, 'recording.wav'))">● 녹음 시작</button>
+        <span class="hint">발표를 녹음합니다. 음성이 모델에 그대로 전달됩니다.</span></div></div>
+      <p id="scriptMsg" style="margin:8px 0 0"></p>
+      <div id="scriptBox"><label>발표 전사문 <span class="hint">여기서 오류를 고칠 수 있습니다.</span></label>
+        <textarea id="transcript" style="min-height:220px"></textarea></div>
+    </div>
+    <div class="card"><div class="row"><button class="btn primary" onclick="run(this, analyze)">주제와 개념 파악</button>
+      <span class="hint">발표 내용은 채점하지 않습니다. 질문을 만드는 재료로만 씁니다.</span></div></div>`;
+  setScriptMode(S.scriptMode || 0);
+}
+function setScriptMode(n) {
+  if (S.rec) return toast("녹음이나 받아쓰기를 먼저 끝내세요.");
+  S.scriptMode = n;
+  for (let i = 0; i < 4; i++) { $("mode" + i).style.display = i === n ? "block" : "none"; $("modeBtn" + i).classList.toggle("on", i === n); }
+  $("scriptBox").style.display = n >= 2 ? "none" : "block";  // 음성 파일과 녹음은 전사문 칸을 보이지 않는다.
+  scriptStatus();
+}
+// 음성 방식에서는 어떤 음성이 첨부됐는지 글로 알려준다.
+function scriptStatus() {
+  const a = S.scriptAudio;
+  $("scriptMsg").textContent = S.scriptMode >= 2 && a ? `음성 첨부됨 · ${a.name} · ${mb(a.blob)}. 분석할 때 이 음성이 그대로 전달되고, 근거 대조용 전사문은 자동으로 만들어집니다.` : "";
+}
+function attachScript(blob, name) { if (blob) { S.scriptAudio = {blob, name}; scriptStatus(); } }
+async function loadScriptFile(input) {
+  const file = input.files[0]; if (!file) return;
+  $("transcript").value = await file.text();
+}
+async function loadSample(name) {
+  if (!name) return;
+  try {
+    const s = await api("/api/samples/" + encodeURIComponent(name));
+    $("stName").value = s.name;
+    S.materials = {name: s.materials_name, text: s.materials_text, sample: s.name};
+    $("matMsg").textContent = s.materials_name ? `샘플 발표자료: ${s.materials_name}. pdf 원본이 모델에 그대로 전달됩니다.` : "이 샘플에는 발표자료가 없습니다.";
+    setScriptMode(0); $("transcript").value = s.transcript;
+  } catch (e) { toast(e.message); }
+}
+async function uploadMaterials(input) {
+  const file = input.files[0]; if (!file) return;
+  const fd = new FormData(); fd.append("file", file);
+  try {
+    S.materials = {...await api("/api/extract-text", fd, true), file};
+    $("matMsg").textContent = /\.pdf$/i.test(file.name) ? `${file.name} · ${mb(file)}. pdf 원본이 모델에 그대로 전달됩니다.` : `${file.name} · ${S.materials.text.length}자를 읽었습니다.`;
+  }
+  catch (e) { toast(e.message); input.value = ""; }
+}
+async function analyze() {
+  const fd = new FormData(), byAudio = S.scriptMode >= 2;
+  if (byAudio && !S.scriptAudio) throw new Error("발표 음성을 먼저 넣으세요.");
+  for (const [k, v] of Object.entries({course_id: S.courseId, student_name: $("stName").value, student_number: $("stNum").value,
+    materials_text: S.materials.text, materials_name: S.materials.name})) fd.append(k, v);
+  if (byAudio) fd.append("audio", S.scriptAudio.blob, S.scriptAudio.name); else fd.append("transcript", $("transcript").value);
+  if (S.materials.file) fd.append("materials", S.materials.file, S.materials.file.name);
+  if (S.materials.sample) fd.append("sample", S.materials.sample);
+  S.session = await api("/api/sessions", fd, true);
+  S.materials = {name: "", text: ""}; S.scriptAudio = null; S.unit = null;
+  show(4);
+}
+
+// ---------- 탭 4: 질문 생성 ----------
+// 음성이 모델에 그대로 전달됐는지, 못 했다면 왜인지 보여준다.
+function audioNote(a, what = "🔊 음성", instead = "전사문") {
+  if (!a) return "";
+  return a.passed ? `<p class="hint">${what}을 모델(${esc(a.model)})에 그대로 전달했습니다.</p>`
+    : `<p class="need">${what}을 모델(${esc(a.model)})에 전달하지 못해 ${instead}으로 대신했습니다. 이유: ${esc(a.reason)}</p>`;
+}
+function attachAnswer(i, blob, name) {
+  if (!blob) return;
+  S.ansAudio[i] = {blob, name};
+  $("ans" + i).disabled = true; $("ans" + i).placeholder = "음성이 그대로 전달됩니다. 제출하면 근거 대조용 전사문이 자동으로 만들어집니다.";
+  $("ansMsg" + i).innerHTML = `음성 첨부됨 · ${esc(name)} · ${mb(blob)} <button class="btn" onclick="detachAnswer(${i})">음성 빼기</button>`;
+}
+function detachAnswer(i) { delete S.ansAudio[i]; $("ans" + i).disabled = false; $("ans" + i).placeholder = ""; $("ansMsg" + i).innerHTML = ""; }
+function liveAnswer(btn, i) { S.ansAudio[i] ? toast("음성이 첨부돼 있습니다. 받아쓰기를 쓰려면 음성을 먼저 빼세요.") : toggleLive(btn, "ans" + i); }
+function analysisCard(s) {
+  const a = s.analysis, sus = a.suspected_misconceptions || [];
+  return `<div class="card"><h2>발표 분석</h2>
+    ${audioNote(s.presentation.audio)}${audioNote(s.presentation.materials_file, "📄 발표자료 pdf 원본", "pdf에서 뽑은 글자만")}
+    <p><b>주제</b> ${esc(a.topic)}</p><p class="hint">${esc(a.summary)}</p>
+    <p><b>발표한 개념</b> ${a.mentioned_concepts.length ? a.mentioned_concepts.map(c => `<span class="chip t">${c}</span>`).join("") : "없음"}</p>
+    ${sus.length ? `<h3>오개념 의심 지점 (판정이 아니라 질문 재료)</h3>${sus.map(m => `<div class="ev"><span class="chip t">${esc(unitName(String(m.unit)))}</span><blockquote>${esc(m.quote)}</blockquote><span class="hint">${esc(m.why)}</span></div>`).join("")}` : ""}
+  </div>`;
+}
+function turnCard(t, editable) {
+  return `<div class="card"><h2>${t.turn}턴 질문</h2>
+    ${t.questions.map((q, i) => `<div class="qbox">
+      <div class="q">Q${i + 1}. ${esc(q.text)}</div>
+      <div>${q.targets.map(u => `<span class="chip t">${unitName(u)}</span>`).join("")} <span class="hint">${esc(q.intent)}</span></div>
+      ${editable ? `<label>답변 전사문</label><textarea id="ans${i}"></textarea>
+        <div class="row" style="margin-top:6px"><button class="btn" onclick="liveAnswer(this, ${i})">● 실시간 받아쓰기</button>
+          <button class="btn" onclick="toggleRec(this, b => attachAnswer(${i}, b, 'recording.wav'))">● 실시간 음성 녹음</button>
+          <span class="hint">음성 파일 넣기(wav, mp3):</span><input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" onchange="attachAnswer(${i}, this.files[0], this.files[0]?.name)"></div>
+        <div class="hint" id="ansMsg${i}" style="margin-top:6px"></div>`
+        : `<label>답변 전사문${t.audio?.files?.[i] ? " (🔊 음성 답변을 자동 전사)" : ""}</label><div>${esc(t.answers[i]) || '<span class="hint">(답변 없음)</span>'}</div>`}
+    </div>`).join("")}
+    ${editable ? `<div class="row"><button class="btn primary" onclick="run(this, submitAnswers)">답변 제출하고 판정</button><span class="hint">음성 답변은 모델에 그대로 전달됩니다. 받아쓰기나 직접 입력한 답변은 오류를 고친 뒤 제출하세요.</span></div>`
+      : `${audioNote(t.audio)}<h3>판정 결과 <span class="hint">${esc((t.graders || []).join(" · "))}</span></h3>
+         ${t.judgments.length ? t.judgments.map(j => `<div>${chip(j.status)} ${unitName(j.unit)} <span class="hint">두 채점자 일치 → 확정</span></div>`).join("") : '<p class="hint">확정된 판정이 없습니다.</p>'}
+         ${(t.disagreements || []).map(d => `<div><span class="chip s-unknown">채점자 불일치</span> ${unitName(d.unit)} <span class="hint">${d.opinions.map(o => esc(o.status)).join(" / ")} → 확정하지 않고 다시 확인</span></div>`).join("")}
+         ${t.discarded.length ? `<p class="hint">근거 인용이 답변 전사문과 맞지 않아 버린 판정 ${t.discarded.length}건</p>` : ""}`}
+  </div>`;
+}
+function renderQuestionTab() {
+  const s = S.session;
+  if (!s) return $("tab4").innerHTML = `<div class="card"><p class="hint">탭 3에서 발표를 입력하거나 탭 6에서 기록을 여세요.</p></div>`;
+  const last = s.turns[s.turns.length - 1], waiting = last && last.answers === null;
+  let next = "";
+  if (s.finished) next = `<div class="card"><div class="row"><b>질의응답이 끝났습니다.</b><button class="btn primary" onclick="show(5)">학생 수준 및 피드백 보기</button></div></div>`;
+  else if (!waiting) next = `<div class="card"><div class="row"><button class="btn primary" onclick="run(this, makeQuestions)">${s.turns.length + 1}턴 질문 생성</button>
+    ${s.turns.length ? `<button class="btn" onclick="show(5)">지금까지의 그래프 보기</button>` : ""}
+    <span class="hint">${s.turns.length ? "미확인 항목, 채점자 의견이 갈린 항목, 확실하지 않은 오개념이 남아 2턴을 진행합니다." : "모든 학생이 최소 1턴은 질문을 받습니다. 턴당 최대 3개."}</span></div></div>`;
+  $("tab4").innerHTML = analysisCard(s) + s.turns.map((t, i) => turnCard(t, waiting && i === s.turns.length - 1)).join("") + next;
+}
+async function makeQuestions() { S.session = await api(`/api/sessions/${S.session.id}/questions`, {}); S.ansAudio = {}; renderQuestionTab(); }
+async function submitAnswers() {
+  const n = S.session.turns[S.session.turns.length - 1].questions.length, fd = new FormData();
+  fd.append("answers", JSON.stringify(Array.from({length: n}, (_, i) => S.ansAudio[i] ? "" : $("ans" + i).value)));
+  for (const [i, a] of Object.entries(S.ansAudio)) fd.append("audio" + i, a.blob, a.name);
+  S.session = await api(`/api/sessions/${S.session.id}/answers`, fd, true);
+  S.ansAudio = {};
+  S.session.finished ? show(5) : renderQuestionTab();
+}
+
+// ---------- 탭 5: 학생 수준 및 피드백 ----------
+// 채점기준 그래프: 개념(노드)과 원칙 간 관계(엣지). state가 있으면 그 위에 학생의 이해 수준을 색으로 입힌다.
+// 투명성·설명가능성, 안전성·견고성처럼 한 원칙의 두 요소는 띠로 묶고, 그 원칙의 관계 엣지는 띠 가운데에서 나간다.
+function graphSvg(state) {
+  const pos = {}, n = CONCEPTS.length, R = 34;
+  CONCEPTS.forEach((c, i) => { const a = (-90 + 360 / n * i) * Math.PI / 180; pos[c] = [280 + 172 * Math.cos(a), 222 + 172 * Math.sin(a)]; });
+  const anchor = p => { const parts = ELEMENTS[p] || [p]; return [0, 1].map(k => parts.reduce((sum, c) => sum + pos[c][k], 0) / parts.length); };
+  // state가 있을 때 그 안에 없는 항목은 학생이 말하지 않은 것이라 흐리게 그린다.
+  const of = name => state ? state[name] || {absent: true} : {}, color = u => !state ? "#6b7a99" : u.absent ? ABSENT : COLOR[u.status];
+  const bands = Object.entries(ELEMENTS).map(([p, [a, b]]) => {
+    const [x, y] = anchor(p);
+    return `<line x1="${pos[a][0]}" y1="${pos[a][1]}" x2="${pos[b][0]}" y2="${pos[b][1]}" stroke="#e4e7ee" stroke-width="${R * 2 + 18}" stroke-linecap="round"/><circle cx="${x}" cy="${y}" r="6" fill="#9aa3b5"/>`;
+  }).join("");
+  const edges = PAIRS.map(p => {
+    const [a, b] = p.split("|").map(anchor), u = of(p), na = u.absent, sel = S.unit === p;
+    const line = `x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"`;
+    return `<g class="edge" onclick="pickUnit('${p}')"><line ${line} stroke="${color(u)}" stroke-width="${sel ? 8 : !state ? 3 : na ? 2 : 5}" opacity="${na ? .3 : 1}" ${u.needs_instructor ? 'stroke-dasharray="9 6"' : ""}/><line class="hit" ${line}/></g>`;
+  }).join("");
+  const nodes = CONCEPTS.map(c => {
+    const u = of(c), na = u.absent, [x, y] = pos[c];
+    return `<g class="node" onclick="pickUnit('${c}')" ><circle cx="${x}" cy="${y}" r="${R}" fill="#fff"/><circle opacity="${na ? .45 : 1}" cx="${x}" cy="${y}" r="${R}" fill="${color(u)}" stroke="${S.unit === c ? "#1d2330" : "#fff"}" stroke-width="${S.unit === c ? 4 : 3}" ${u.needs_instructor ? 'stroke-dasharray="7 5"' : ""}/><text x="${x}" y="${y}">${c}</text></g>`;
+  }).join("");
+  return `<svg viewBox="0 0 560 444" style="width:100%;max-width:560px;display:block;margin:0 auto">${bands}${edges}${nodes}</svg>`;
+}
+function unitPanel(s, rubric) {
+  if (!S.unit) return `<p class="hint">그래프의 노드(개념)나 엣지(관계)를 누르면 채점기준${s ? "과 학생 답변의 근거" : ""}가 나옵니다.</p>`;
+  const u = s?.state[S.unit], entry = rubric.concepts[S.unit] || rubric.relations[S.unit];
+  const criteria = `<h3>채점기준</h3><p>${esc(entry.definition)}</p><p><b>이해 수준</b> ${esc(entry.understand)}</p><p><b>적용 수준</b> ${esc(entry.apply)}</p>
+    <p><b>흔한 오개념</b></p><ul>${entry.misconceptions.map(m => `<li>${esc(m)}</li>`).join("")}</ul>`;
+  if (!u) return `<h2>${unitName(S.unit)}</h2>${criteria}`;
+  const opinion = e => `<div class="ev">${chip(e.status)} <span class="hint">${e.turn}턴 · ${esc(e.grader || "")}</span>
+      ${e.quote ? `<div><b>질문</b> ${esc(e.question)}</div><blockquote>“${esc(e.quote)}”</blockquote><div><b>채점기준표</b> ${esc(e.rubric_item)}</div>` : ""}
+      <div class="hint">${esc(e.reason)}</div></div>`;
+  return `<h2>${unitName(S.unit)}</h2>
+    <div>${chip(u.status)} <span class="hint">${u.source}${u.status === "오개념" && !u.certain ? " · 확실하지 않음" : ""}</span></div>
+    ${u.needs_instructor ? `<p class="need">교수자 판단 필요: 2턴 뒤에도 두 채점자의 판정이 일치하지 않았거나 답변으로 확인되지 않았습니다.</p>` : ""}
+    ${u.note ? `<p><b>교수자 판정 사유</b> ${esc(u.note)}</p>` : ""}
+    ${u.disagreement ? `<h3>채점자 의견 불일치 <span class="hint">확정하지 않음</span></h3>${u.disagreement.map(opinion).join("")}` : ""}
+    <h3>확정된 근거</h3>
+    ${u.evidence.length ? u.evidence.map(opinion).join("") : `<p class="hint">두 채점자가 일치한 근거가 아직 없습니다.</p>`}
+    <details><summary>채점기준 보기</summary>${criteria}</details>
+    <h3>교수자 직접 판정</h3>
+    <select id="ovStatus">${STATUSES.map(st => `<option ${st === u.status ? "selected" : ""}>${st}</option>`).join("")}</select>
+    <label>판정 사유 (필수)</label><textarea id="ovNote" style="min-height:60px"></textarea>
+    <div style="margin-top:8px"><button class="btn primary" onclick="run(this, override)">교수자 판정으로 저장</button></div>`;
+}
+async function renderResultTab() {
+  const s = S.session;
+  if (!s) {  // 학생 평가 전: 선택한 강의의 채점기준표를 그래프로 보여준다.
+    const c = course();
+    if (!c) return $("tab5").innerHTML = `<div class="card"><p class="hint">탭 2에서 강의를 먼저 선택하세요.</p></div>`;
+    if (S.rubric?.id !== c.rubric_id) S.rubric = await api("/api/rubrics/" + c.rubric_id);
+    return $("tab5").innerHTML = `<div class="grid2">
+      <div class="card"><h2>채점기준 그래프 · ${esc(S.rubric.name)}</h2>${graphSvg(null)}
+        <p class="hint" style="text-align:center">노드 = 개념 ${CONCEPTS.length}개 · 엣지 = 원칙 간 관계 ${PAIRS.length}개 · 회색 띠 = 한 원칙의 두 요소(요소별로 따로 판정)<br>학생 평가를 시작하면 이 그래프 위에 이해 수준이 색으로 표시됩니다.</p></div>
+      <div class="card">${unitPanel(null, S.rubric)}</div></div>`;
+  }
+  const need = Object.keys(s.state).filter(u => s.state[u].needs_instructor), fb = s.feedback;
+  const done = s.turns.filter(t => t.answers).length;
+  $("tab5").innerHTML = `
+    ${s.finished ? "" : `<div class="card"><span class="need">질의응답 진행 중 (${done}턴 판정 완료).</span> <span class="hint">그래프는 답변을 판정할 때마다 갱신됩니다.</span> <button class="btn" onclick="show(4)">탭 4로 가기</button></div>`}
+    ${need.length ? `<div class="card"><span class="need">교수자 판단 필요 ${need.length}건</span> ${need.map(u => `<button class="btn" onclick="pickUnit('${u}')">${unitName(u)}</button>`).join(" ")}</div>` : ""}
+    <div class="grid2">
+      <div class="card"><h2>${esc(s.student.name || "학생")} · ${esc(s.analysis.topic)}</h2>
+        <p class="hint">채점기준 그래프(${esc(s.rubric.name)}) 위에 학생의 이해 수준을 색으로 표시합니다.</p>${graphSvg(s.state)}
+        <div style="text-align:center;margin-top:8px">${STATUSES.map(chip).join("")}</div>
+        <p class="hint" style="text-align:center">점선 = 교수자 판단 필요 · 흐린 항목 = 학생이 말하지 않은 개념·관계 · 회색 띠 = 한 원칙의 두 요소</p></div>
+      <div class="card">${unitPanel(s, s.rubric)}</div>
+    </div>
+    <div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">더 공부할 부분</h2>
+      ${s.finished ? `<button class="btn" onclick="run(this, remakeFeedback)">현재 판정으로 피드백 다시 쓰기</button>` : ""}</div>
+      ${fb ? `<p>${esc(fb.overall)}</p>${fb.items.map(i => `<div class="ev">${s.state[i.unit] ? chip(s.state[i.unit].status) : ""} <b>${unitName(i.unit)}</b><div>${esc(i.text)}</div></div>`).join("")}`
+        : `<p class="hint">${s.finished ? "피드백이 아직 없습니다. 오른쪽 버튼으로 만드세요." : "질의응답이 끝나면 피드백이 만들어집니다."}</p>`}
+    </div>`;
+}
+function pickUnit(u) { S.unit = u; renderResultTab(); }
+async function override() { S.session = await api(`/api/sessions/${S.session.id}/override`, {unit: S.unit, status: $("ovStatus").value, note: $("ovNote").value}); renderResultTab(); toast("교수자 판정으로 저장했습니다."); }
+async function remakeFeedback() { S.session = await api(`/api/sessions/${S.session.id}/feedback`, {}); renderResultTab(); }
+
+// ---------- 탭 6: 기록 ----------
+async function renderRecordTab() {
+  const list = await api("/api/sessions"), s = S.session;
+  $("tab6").innerHTML = `
+    <div class="card"><h2>기록</h2>
+      ${list.length ? `<table><tr><th>일시</th><th>강의</th><th>학생</th><th>주제</th><th>진행</th><th></th></tr>
+        ${list.map(r => `<tr class="pick" onclick="openRecord('${r.id}')"><td>${r.created_at}</td><td>${esc(r.course_name)}</td><td>${esc(r.student.name)} ${esc(r.student.number)}</td><td>${esc(r.topic)}</td>
+          <td>${r.finished ? "종료" : r.turns + "턴 진행 중"}${r.needs_instructor ? ` <span class="need">· 교수자 판단 필요 ${r.needs_instructor}</span>` : ""}</td>
+          <td><a href="#" onclick="event.stopPropagation(); exportRecord('${r.id}'); return false">내보내기</a></td></tr>`).join("")}</table>`
+        : `<p class="hint">아직 기록이 없습니다.</p>`}
+      <p class="hint">기록은 이 브라우저(IndexedDB)에만 저장됩니다. 다른 컴퓨터나 브라우저에서는 보이지 않으니 필요한 기록은 내보내기로 JSON 파일을 받아 두세요. 행을 누르면 다시 열립니다.</p>
+    </div>
+    ${s ? `<div class="card"><h2>열려 있는 기록의 전 과정 · ${esc(s.student.name)}</h2>
+      <details><summary>발표 전사문</summary><pre>${esc(s.presentation.transcript)}</pre></details>
+      ${s.log.map(l => `<details><summary>${l.time} · ${esc(l.event)}</summary><pre>${esc(JSON.stringify(l.detail, null, 1))}</pre></details>`).join("")}</div>` : ""}`;
+}
+async function exportRecord(id) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(await Engine.exportSession(id)); a.download = id + ".json"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+async function openRecord(id) { S.session = await api("/api/sessions/" + id); S.unit = null; show(S.session.finished ? 5 : 4); }
+
+(async function init() {
+  let units;
+  await Engine.init();
+  [S.rubrics, S.courses, S.samples, S.settings, units] = await Promise.all([api("/api/rubrics"), api("/api/courses"), api("/api/samples"), api("/api/settings"), api("/api/units")]);
+  ({concepts: CONCEPTS, principles: PRINCIPLES, elements: ELEMENTS, pairs: PAIRS} = units);
+  if (!course()) S.courseId = S.courses[0]?.id;
+  show(3);
+  const s = await api("/api/settings");
+  if (!s.has_key) openSettings();
+})();
+</script>
+</body>
+</html>
