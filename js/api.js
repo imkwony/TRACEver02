@@ -3,9 +3,9 @@
 (function (root) {
   const C = root.Core, L = root.LLM;
   const MATERIAL_LIMIT = 60000;  // LLM에 넘기는 자료 글자 수 상한
-  const SAMPLES = "자료/샘플 발표 자료/", SAMPLE_SUFFIX = "_대본.txt";
+  const SAMPLES = "자료/샘플 발표 자료/";
   const DEFAULT_COURSES = [{id: "ai-ethics-01", name: "인공지능 윤리 01반", rubric_id: "default"}];
-  let DEFAULT_RUBRIC = null, SAMPLE_NAMES = [];
+  let DEFAULT_RUBRIC = null, SAMPLE_LIST = [], SAMPLE_NAMES = [];  // samples.json: [{name, pdf, script}]
 
   const fail = msg => { throw new Error(msg); };
 
@@ -174,9 +174,10 @@
     ["GET", /^\/api\/samples\/(.+)$/, async ([name]) => {
       name = decodeURIComponent(name);
       if (!SAMPLE_NAMES.includes(name)) fail("샘플을 찾을 수 없습니다.");
-      const raw = new Uint8Array(await (await fetch(encodeURI(SAMPLES + name + SAMPLE_SUFFIX))).arrayBuffer());
-      let transcript;
-      try { transcript = new TextDecoder("utf-8", {fatal: true}).decode(raw); } catch (e) { transcript = new TextDecoder("euc-kr").decode(raw); }
+      const md = await (await fetch(encodeURI(SAMPLES + sampleOf(name).script))).text();
+      // "## 발표 스크립트"부터 "## [평가자용 메모" 앞까지만 쓴다. 메모(의도한 오개념 등)는 모델에 주지 않는다.
+      const body = md.split(/^## 발표 스크립트\s*$/m)[1] ?? md;
+      const transcript = body.split(/^## \[평가자용 메모/m)[0].replace(/\n---\s*$/, "").replace(/\*\*/g, "").trim();
       const pdf = await samplePdf(name);
       return {name, transcript, materials_name: pdf ? pdf.name : "",
         materials_text: pdf ? ((await extractText(pdf.name, pdf)) || "").slice(0, MATERIAL_LIMIT) : ""};
@@ -343,9 +344,11 @@
     return saveSession(s, "피드백 작성", s.feedback);
   }
 
+  const sampleOf = name => SAMPLE_LIST.find(x => x.name === name);
   async function samplePdf(name) {
-    const r = await fetch(encodeURI(SAMPLES + name + ".pdf"));
-    return r.ok ? new File([await r.blob()], name + ".pdf", {type: "application/pdf"}) : null;
+    const file = sampleOf(name)?.pdf;
+    const r = file ? await fetch(encodeURI(SAMPLES + file)) : null;
+    return r?.ok ? new File([await r.blob()], file, {type: "application/pdf"}) : null;
   }
 
   // 화면이 부르는 함수. 예전 서버의 fetch(path)와 같은 자리에 쓴다.
@@ -364,7 +367,7 @@
       fetch(encodeURI("채점기준표/rubric_default.json")).then(r => r.json()),
       fetch(encodeURI(SAMPLES + "samples.json")).then(r => (r.ok ? r.json() : [])).catch(() => []),
     ]);
-    DEFAULT_RUBRIC = rubric; SAMPLE_NAMES = samples;
+    DEFAULT_RUBRIC = rubric; SAMPLE_LIST = samples; SAMPLE_NAMES = samples.map(x => x.name);
   }
 
   // 실시간 받아쓰기 소켓(키는 이 브라우저의 설정에서 읽는다).
