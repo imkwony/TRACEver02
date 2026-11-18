@@ -95,5 +95,20 @@ const tests = {
     Object.assign(s["공정성"], {status: C.MISCONCEPTION, certain: true}); ok(!C.needsSecondTurn(s));
     s["공정성"].certain = false; ok(C.needsSecondTurn(s));
   },
+  presentationStage() {
+    // 발표에서 확정한 판정은 질의응답으로 확인하기 전까지 2턴을 요구하고, 답변 판정이 일치하면 바뀐다.
+    const s = C.initialState(["공정성"]);
+    delete s[`공정성|${TR}`];
+    const mis = {...valid0(), turn: 0, status: C.MISCONCEPTION};
+    C.applyJudgments(s, [{"공정성": mis}, {"공정성": mis}], ["1", "2"], 0, "발표 판정");
+    eq([s["공정성"].status, s["공정성"].source], [C.MISCONCEPTION, "발표 판정"]);
+    ok(C.needsSecondTurn(s));
+    const und = {...valid0(), status: C.UNDERSTAND};
+    C.applyJudgments(s, [{"공정성": und}, {}], ["1", "2"], 1);  // 질의응답에서 갈리면 발표 판정을 유지한다.
+    eq(s["공정성"].status, C.MISCONCEPTION);
+    C.applyJudgments(s, [{"공정성": und}, {"공정성": und}], ["1", "2"], 1);
+    eq([s["공정성"].status, s["공정성"].source], [C.UNDERSTAND, "답변 판정"]);
+    ok(!C.needsSecondTurn(s));
+  },
 };
 for (const [n, f] of Object.entries(tests)) { f(); console.log("통과:", n); }

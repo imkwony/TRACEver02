@@ -527,23 +527,32 @@ function attachAnswer(i, blob, name) {
 function detachAnswer(i) { delete S.ansAudio[i]; $("ans" + i).disabled = false; $("ans" + i).placeholder = ""; $("ansMsg" + i).innerHTML = ""; }
 function liveAnswer(btn, i) { S.ansAudio[i] ? toast("음성이 첨부돼 있습니다. 받아쓰기를 쓰려면 음성을 먼저 빼세요.") : toggleLive(btn, "ans" + i); }
 function analysisCard(s) {
-  const a = s.analysis, sus = a.suspected_misconceptions || [];
+  const a = s.analysis, sus = a.suspected_misconceptions || [], pj = s.presentation_judgment;
   return `<div class="card"><h2>발표 분석</h2>
     ${audioNote(s.presentation.audio)}${audioNote(s.presentation.materials_file, "📄 발표자료 pdf 원본", "pdf에서 뽑은 글자만")}
     <p><b>주제</b> ${esc(a.topic)}</p><p class="hint">${esc(a.summary)}</p>
     <p><b>발표한 개념</b> ${a.mentioned_concepts.length ? a.mentioned_concepts.map(c => `<span class="chip t">${c}</span>`).join("") : "없음"}</p>
     ${sus.length ? `<h3>오개념 의심 지점 (판정이 아니라 질문 재료)</h3>${sus.map(m => `<div class="ev"><span class="chip t">${esc(unitName(String(m.unit)))}</span><blockquote>${esc(m.quote)}</blockquote><span class="hint">${esc(m.why)}</span></div>`).join("")}` : ""}
-    <h3>발표 기준 예상 이해도 <span class="hint">판정이 아니라 참고용</span></h3>
-    <div style="pointer-events:none">${graphSvg(expectedState(a))}</div>
-    <div style="text-align:center;margin-top:8px">${["이해 수준", "오개념"].map(chip).join("")}</div>
-    <p class="hint" style="text-align:center">발표에서 다룬 개념 = 이해 수준 · 오개념 의심 지점 = 오개념 · 흐린 항목 = 발표에서 다루지 않음<br>적용 수준과 실제 이해 여부는 질의응답 판정으로 확인합니다(탭 5).</p>
+    ${pj?.error ? `<p class="need">발표 판정을 하지 못했습니다: ${esc(pj.error)}</p>`
+      : pj ? `<h3>발표 판정 <span class="hint">오개념·이해 못함만 · 두 채점자가 일치하면 확정 · 질의응답 답변으로 바뀔 수 있음</span></h3>${graderTable(pj)}` : ""}
+    <h3>발표 기준 예상 이해도 <span class="hint">질문 전 참고용</span></h3>
+    <div style="pointer-events:none">${graphSvg(expectedState(s))}</div>
+    <div style="text-align:center;margin-top:8px">${(pj?.by_grader ? ["이해 수준", "오개념", "이해 못함", "미확인"] : ["이해 수준", "오개념"]).map(chip).join("")}</div>
+    <p class="hint" style="text-align:center">${pj?.by_grader ? "오개념·이해 못함 = 발표 판정(두 채점자 일치) · 미확인 = 채점자 의견 갈림 · 이해 수준 = 발표에서 다룬 개념(예상)"
+      : "발표에서 다룬 개념 = 이해 수준 · 오개념 의심 지점 = 오개념"} · 흐린 항목 = 발표에서 다루지 않음<br>적용 수준과 이해 수준은 질의응답 판정으로 확인합니다(탭 5).</p>
   </div>`;
 }
-// 발표 분석만으로 계산한 예상 이해도. 모델을 다시 부르지 않고, 질문 생성과 판정에도 쓰지 않는다.
-function expectedState(a) {
-  const st = {};
+// 질문 전, 발표만으로 본 이해도. 그래프는 보여 주기만 하고 질문 생성에는 쓰지 않는다.
+// 발표 판정이 있으면 확정된 오개념·이해 못함과 의견이 갈린 항목(미확인)을 덧입힌다. 없는 예전 기록은 오개념 의심 지점을 쓴다.
+function expectedState(s) {
+  const a = s.analysis, pj = s.presentation_judgment, st = {};
   for (const c of a.mentioned_concepts || []) st[c] = {status: "이해 수준"};
-  for (const m of a.suspected_misconceptions || []) for (const u of Core.expandUnit(m.unit)) st[u] = {status: "오개념"};
+  if (!pj?.by_grader) {
+    for (const m of a.suspected_misconceptions || []) for (const u of Core.expandUnit(m.unit)) st[u] = {status: "오개념"};
+    return st;
+  }
+  for (const j of pj.judgments) st[j.unit] = {status: j.status};
+  for (const d of pj.disagreements || []) st[d.unit] = {status: "미확인"};
   return st;
 }
 const ansKey = (t, i) => `ans:${S.session.id}:${t.turn}:${i}`;  // 제출 전 답변 보관 이름
@@ -605,7 +614,7 @@ function renderQuestionTab() {
   if (s.finished) next = `<div class="card"><div class="row"><b>질의응답이 끝났습니다.</b><button class="btn primary" onclick="show(5)">학생 수준 및 피드백 보기</button></div></div>`;
   else if (!waiting) next = `<div class="card"><div class="row"><button class="btn primary" onclick="run(this, makeQuestions)">${s.turns.length + 1}턴 질문 생성</button>
     ${s.turns.length ? `<button class="btn" onclick="show(5)">지금까지의 그래프 보기</button>` : ""}
-    <span class="hint">${s.turns.length ? "미확인 항목, 채점자 의견이 갈린 항목, 확실하지 않은 오개념·이해 못함이 남아 2턴을 진행합니다." : "모든 학생이 최소 1턴은 질문을 받습니다. 턴당 최대 3개."}</span></div></div>`;
+    <span class="hint">${s.turns.length ? "미확인 항목, 채점자 의견이 갈린 항목, 확실하지 않은 오개념·이해 못함, 발표에서만 정하고 답변으로 확인하지 못한 판정이 남아 2턴을 진행합니다." : "모든 학생이 최소 1턴은 질문을 받습니다. 턴당 최대 3개."}</span></div></div>`;
   $("tab4").innerHTML = inputSummary(s, false) + analysisCard(s) + s.turns.map((t, i) => turnCard(t, waiting && i === s.turns.length - 1)).join("") + next;
 }
 async function makeQuestions() { setSession(await api(`/api/sessions/${S.session.id}/questions`, {})); S.ansAudio = {}; renderQuestionTab(); }
@@ -650,8 +659,8 @@ function unitPanel(s, rubric) {
   const criteria = `<h3>채점기준</h3><p>${esc(entry.definition)}</p><p><b>이해 수준</b> ${esc(entry.understand)}</p><p><b>적용 수준</b> ${esc(entry.apply)}</p>
     <p><b>흔한 오개념</b></p><ul>${entry.misconceptions.map(m => `<li>${esc(m)}</li>`).join("")}</ul>`;
   if (!u) return `<h2>${unitName(S.unit)}</h2>${criteria}`;
-  const opinion = e => `<div class="ev">${chip(e.status)} <span class="hint">${e.turn}턴 · ${esc(e.grader || "")}</span>
-      ${e.quote ? `<div><b>질문</b> ${esc(e.question)}</div><blockquote>“${esc(e.quote)}”</blockquote><div><b>채점기준표</b> ${esc(e.rubric_item)}</div>` : ""}
+  const opinion = e => `<div class="ev">${chip(e.status)} <span class="hint">${e.turn ? e.turn + "턴" : "발표"} · ${esc(e.grader || "")}</span>
+      ${e.quote ? `<div><b>${e.turn ? "질문" : "출처"}</b> ${e.turn ? esc(e.question) : "발표 전사문"}</div><blockquote>“${esc(e.quote)}”</blockquote><div><b>채점기준표</b> ${esc(e.rubric_item)}</div>` : ""}
       <div class="hint">${esc(e.reason)}</div></div>`;
   return `<h2>${unitName(S.unit)}</h2>
     <div>${chip(u.status)} <span class="hint">${u.source}${["오개념", "이해 못함"].includes(u.status) && !u.certain ? " · 확실하지 않음" : ""}</span></div>
@@ -733,14 +742,14 @@ const recordHead = s => [["학생", s.student.name || "(이름 없음)"], ["학�
 async function downloadLevel(id) {
   const s = await api("/api/sessions/" + id);
   const cell = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const rows = recordHead(s).concat([[], ["항목", "종류", "최종 상태", "판정 출처", "확실성", "교수자 판단 필요", "교수자 판정 사유", "근거(답변 인용)", "근거로 든 채점기준", "판정 이유"]]);
+  const rows = recordHead(s).concat([[], ["항목", "종류", "최종 상태", "판정 출처", "확실성", "교수자 판단 필요", "교수자 판정 사유", "근거(발표·답변 인용)", "근거로 든 채점기준", "판정 이유"]]);
   for (const u of Core.UNITS) {
     const st = s.state[u], ev = st?.evidence || [];
     rows.push([unitName(u), u.includes("|") ? "원칙 간 관계" : "개념",
       st ? st.status : "말하지 않음", st?.source || "", st && ["오개념", "이해 못함"].includes(st.status) && !st.certain ? "확실하지 않음" : "",
       st?.needs_instructor ? "예" : "", st?.note || "",
       [...new Set(ev.map(e => e.quote))].join(" / "), [...new Set(ev.map(e => e.rubric_item))].join(" / "),
-      [...new Set(ev.map(e => `${e.turn}턴 ${e.grader}: ${e.reason}`))].join(" / ")]);
+      [...new Set(ev.map(e => `${e.turn ? e.turn + "턴" : "발표"} ${e.grader}: ${e.reason}`))].join(" / ")]);
   }
   saveBlob(new Blob(["﻿" + rows.map(r => r.map(cell).join(",")).join("\r\n")], {type: "text/csv;charset=utf-8"}), fileBase(s) + "_학생수준.csv");
 }

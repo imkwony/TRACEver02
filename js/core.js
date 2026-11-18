@@ -120,8 +120,8 @@
     return [valid, discarded];
   }
 
-  // 두 채점자의 상태가 같을 때만 확정한다. [확정 목록, 불일치 목록]
-  function applyJudgments(state, byGrader, graders, turnNo) {
+  // 두 채점자의 상태가 같을 때만 확정한다. [확정 목록, 불일치 목록]. source: '답변 판정' 또는 '발표 판정'
+  function applyJudgments(state, byGrader, graders, turnNo, source = "답변 판정") {
     const accepted = [], disagreements = [];
     for (const unit of UNITS) {
       const found = byGrader.map(g => g[unit]);
@@ -129,7 +129,7 @@
       const opinions = found.map((o, i) => o || {turn: turnNo, grader: graders[i], status: UNKNOWN, quote: "", reason: "판정하지 않음"});
       const u = ensure(state, unit);
       if (new Set(opinions.map(o => o.status)).size === 1) {
-        u.status = opinions[0].status; u.source = "답변 판정";
+        u.status = opinions[0].status; u.source = source;
         u.certain = opinions.every(o => o.certain);
         u.evidence.push(...opinions);
         u.disagreement = null;
@@ -143,8 +143,8 @@
     return [accepted, disagreements];
   }
 
-  // 미확인이 남았거나, 오개념·이해 못함 판정이 확실하지 않으면 2턴이 필요하다.
-  const needsSecondTurn = state => Object.values(state).some(u => u.status === UNKNOWN
+  // 미확인이 남았거나, 오개념·이해 못함 판정이 확실하지 않거나, 발표에서만 정한 판정을 질의응답으로 아직 확인하지 못했으면 2턴이 필요하다.
+  const needsSecondTurn = state => Object.values(state).some(u => u.status === UNKNOWN || u.source === "발표 판정"
     || ((u.status === MISCONCEPTION || u.status === NOT_UNDERSTOOD) && !u.certain));
 
   function finalize(state, turns) {

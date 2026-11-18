@@ -222,7 +222,19 @@
         analysis, state: C.initialState(mentioned, analysis.most_related_concept),
         turns: [], finished: false, feedback: null, log: [],
       };
-      return saveSession(s, "발표 분석", analysis);
+      s.log.push({time: now(), event: "발표 분석", detail: analysis});
+      // 질문 전에 발표 전사문만으로 오개념·이해 못함을 판정한다. 잘한 것(적용·이해 수준)은 질의응답에서 확인하므로 정하지 않는다.
+      // 여기서 확정된 판정은 질의응답 판정이 일치하면 바뀐다.
+      const units = [...new Set(Object.keys(s.state).concat((analysis.suspected_misconceptions || []).flatMap(m => C.expandUnit(m.unit))))];
+      try {
+        const g = await gradeTwice(s, units, [{text: "(발표)", targets: units}], [transcript], 0, {}, {presentation: true}, [C.MISCONCEPTION, C.NOT_UNDERSTOOD]);
+        const pj = {graders: g.graders, by_grader: g.byGrader, grader_raw: g.raw, discarded: g.discarded, exchange: g.exchange};
+        [pj.judgments, pj.disagreements] = C.applyJudgments(s.state, g.byGrader, g.graders, 0, "발표 판정");
+        s.presentation_judgment = pj;
+      } catch (e) {
+        s.presentation_judgment = {error: e.message};  // 분석은 남기고, 판정 없이 질의응답으로 넘어간다.
+      }
+      return saveSession(s, "발표 판정", s.presentation_judgment);
     }],
     // 탭 4: 다음 턴의 질문을 만든다.
     ["POST", /^\/api\/sessions\/([\w-]+)\/questions$/, async ([sid]) => {
@@ -231,7 +243,7 @@
       if (s.turns.length && s.turns[s.turns.length - 1].answers === null) fail("이전 턴의 답변을 먼저 제출하세요.");
       const turnNo = s.turns.length + 1, statuses = {};
       for (const [n, u] of Object.entries(s.state)) {
-        statuses[n] = u.status + (u.certain ? "" : "(불확실)");
+        statuses[n] = u.status + (u.certain ? "" : "(불확실)") + (u.source === "발표 판정" ? "(발표에서만 확인)" : "");
         if (u.status === C.UNKNOWN && u.disagreement) statuses[n] += "(채점자 의견 갈림: " + u.disagreement.map(o => o.status).join(" / ") + ")";
       }
       const result = await L.generateQuestions(settings(), s.analysis, statuses, s.rubric, s.turns, turnNo);
@@ -256,49 +268,12 @@
       for (let i = 0; i < Math.min(n, 3); i++) { const c = fileOf(fd.get("audio" + i)); if (c) clips[i] = c; }
       for (const [i, clip] of Object.entries(clips)) answers[i] = (await L.transcribe(settings(), ...clip)).trim();
       if (!answers.some(Boolean)) fail("답변을 입력하세요.");
-      // 두 채점자(모델)가 따로 판정한다. 두 채점자의 상태가 같은 항목만 확정된다.
-      const st = settings(), models = [st.model, st.model2];
-      const graders = models.map((m, i) => `채점자 ${i + 1} (${m})`), units = Object.keys(s.state);
       // 이전 턴 질의응답을 맥락(히스토리)으로 함께 준다.
       const history = s.turns.slice(0, -1).map(t => ({turn: t.turn,
         qa: t.questions.map((q, i) => ({question: q.text, answer: (t.answers || [])[i] ?? ""}))}));
-      const judge = (model, us, ctx, files) => L.judgeAnswers({...st, model}, s.analysis.topic || "", turn.questions, answers, s.rubric, files, us, ctx);
-      const validate = rs => {
-        const out = {byGrader: [], discarded: [], raw: rs.map(([r]) => (Array.isArray(r.judgments) ? r.judgments : []))};
-        rs.forEach(([result], i) => {
-          const [valid, bad] = C.validJudgments(result.judgments, turn.turn, turn.questions, answers, s.rubric, graders[i]);
-          out.byGrader.push(valid); out.discarded.push(...bad);
-        });
-        return out;
-      };
-      // 1차: 두 채점자가 따로 판정한다.
-      const results = await Promise.all(models.map(m => judge(m, units, {history}, clips)));
-      const first = validate(results);
-      let final = first;
-      // 의견이 갈린 항목은 서로의 판정과 근거를 보여 준 뒤 각자 다시 판정한다. 그 결과가 같아야 확정된다.
-      const statusOf = (gi, u) => first.byGrader[gi][u]?.status || C.UNKNOWN;
-      const disputed = C.UNITS.filter(u => first.byGrader.some(g => g[u]) && statusOf(0, u) !== statusOf(1, u));
-      if (disputed.length) {
-        const view = (gi, u) => {
-          const o = first.byGrader[gi][u];
-          if (o) return {unit: u, status: o.status, quote: o.quote, reason: o.reason};
-          const d = first.discarded.find(x => x.grader === graders[gi] && C.normalizeUnit(x.unit) === u);
-          if (d) return {unit: u, status: C.UNKNOWN, quote: d.quote || "", reason: `${d.status} 판정을 냈으나 ${d.discard_reason}`};
-          const r = first.raw[gi].find(x => C.normalizeUnit(x?.unit) === u);
-          return {unit: u, status: C.UNKNOWN, quote: "", reason: r?.reason || "판정하지 않음"};
-        };
-        const second = validate(await Promise.all(models.map((m, gi) =>
-          judge(m, disputed, {history, exchange: {mine: disputed.map(u => view(gi, u)), other: disputed.map(u => view(1 - gi, u))}}, {}))));
-        const redo = u => disputed.includes(C.normalizeUnit(u));
-        final = {
-          byGrader: first.byGrader.map((g, gi) => Object.fromEntries(Object.entries(g).filter(([u]) => !redo(u))
-            .concat(Object.entries(second.byGrader[gi]).filter(([u]) => redo(u))))),
-          discarded: first.discarded.filter(d => !redo(d.unit)).concat(second.discarded.filter(d => redo(d.unit))),
-          raw: first.raw.map((r, gi) => r.filter(x => !redo(x?.unit)).concat(second.raw[gi].filter(x => redo(x?.unit)))),
-        };
-        turn.exchange = disputed.map(u => ({unit: u, before: [0, 1].map(gi => view(gi, u))}));
-      }
-      const {byGrader, discarded} = final;
+      const g = await gradeTwice(s, Object.keys(s.state), turn.questions, answers, turn.turn, clips, {history});
+      const {graders, results, byGrader, discarded} = g;
+      if (g.exchange) turn.exchange = g.exchange;
       const infos = results.map(r => r[1]);
       const audioInfo = infos.find(i => i && !i.passed) || infos[0];  // 못 보낸 채점자가 있으면 그 이유
       if (Object.keys(clips).length) {
@@ -309,7 +284,7 @@
       turn.graders = graders; turn.discarded = discarded;
       // 화면에서 채점자별 판정을 나란히 보여 주려고 남긴다. by_grader: 인정된 판정, grader_raw: 모델이 낸 판정 그대로(미확인 이유 포함)
       turn.by_grader = byGrader;
-      turn.grader_raw = final.raw;
+      turn.grader_raw = g.raw;
       [turn.judgments, turn.disagreements] = C.applyJudgments(s.state, byGrader, graders, turn.turn);
       if (turn.turn >= C.MAX_TURNS || !C.needsSecondTurn(s.state)) {
         C.finalize(s.state, s.turns);
@@ -336,6 +311,53 @@
       return saveSession(s, "교수자 판정", {unit, status, note});
     }],
   ];
+
+  // 두 채점자(모델)가 따로 판정한다. 의견이 갈린 항목은 서로의 판정과 근거를 보여 준 뒤 각자 다시 판정한다.
+  // 두 채점자의 상태가 같은 항목만 확정된다(applyJudgments). allowed: 이 단계에서 인정하는 상태.
+  async function gradeTwice(s, units, questions, answers, turnNo, clips, ctx, allowed = C.JUDGED) {
+    const st = settings(), models = [st.model, st.model2];
+    const graders = models.map((m, i) => `채점자 ${i + 1} (${m})`);
+    const judge = (model, us, extra, files) => L.judgeAnswers({...st, model}, s.analysis.topic || "", questions, answers, s.rubric, files, us, {...ctx, ...extra});
+    const validate = rs => {
+      const out = {byGrader: [], discarded: [], raw: rs.map(([r]) => (Array.isArray(r.judgments) ? r.judgments : []))};
+      rs.forEach(([result], i) => {
+        const [valid, bad] = C.validJudgments(result.judgments, turnNo, questions, answers, s.rubric, graders[i]);
+        for (const [u, o] of Object.entries(valid)) if (!allowed.includes(o.status)) {
+          delete valid[u];
+          bad.push({...o, unit: u, discard_reason: `이 단계에서는 ${allowed.join("·")}만 판정함`});
+        }
+        if (ctx.presentation) for (const d of bad) d.discard_reason = d.discard_reason.replace("답변 전사문", "발표 전사문");
+        out.byGrader.push(valid); out.discarded.push(...bad);
+      });
+      return out;
+    };
+    // 1차: 두 채점자가 따로 판정한다.
+    const results = await Promise.all(models.map(m => judge(m, units, {}, clips)));
+    const first = validate(results);
+    const statusOf = (gi, u) => first.byGrader[gi][u]?.status || C.UNKNOWN;
+    const disputed = C.UNITS.filter(u => first.byGrader.some(g => g[u]) && statusOf(0, u) !== statusOf(1, u));
+    if (!disputed.length) return {graders, results, ...first};
+    const view = (gi, u) => {
+      const o = first.byGrader[gi][u];
+      if (o) return {unit: u, status: o.status, quote: o.quote, reason: o.reason};
+      const d = first.discarded.find(x => x.grader === graders[gi] && C.normalizeUnit(x.unit) === u);
+      if (d) return {unit: u, status: C.UNKNOWN, quote: d.quote || "", reason: `${d.status} 판정을 냈으나 ${d.discard_reason}`};
+      const r = first.raw[gi].find(x => C.normalizeUnit(x?.unit) === u);
+      return {unit: u, status: C.UNKNOWN, quote: "", reason: r?.reason || "판정하지 않음"};
+    };
+    // 근거 교환: 갈린 항목만, 음성 없이 다시 판정한다.
+    const second = validate(await Promise.all(models.map((m, gi) =>
+      judge(m, disputed, {exchange: {mine: disputed.map(u => view(gi, u)), other: disputed.map(u => view(1 - gi, u))}}, {}))));
+    const redo = u => disputed.includes(C.normalizeUnit(u));
+    return {
+      graders, results,
+      byGrader: first.byGrader.map((g, gi) => Object.fromEntries(Object.entries(g).filter(([u]) => !redo(u))
+        .concat(Object.entries(second.byGrader[gi]).filter(([u]) => redo(u))))),
+      discarded: first.discarded.filter(d => !redo(d.unit)).concat(second.discarded.filter(d => redo(d.unit))),
+      raw: first.raw.map((r, gi) => r.filter(x => !redo(x?.unit)).concat(second.raw[gi].filter(x => redo(x?.unit)))),
+      exchange: disputed.map(u => ({unit: u, before: [0, 1].map(gi => view(gi, u))})),
+    };
+  }
 
   async function writeFeedback(s) {
     const fb = await L.writeFeedback(settings(), s.analysis.topic || "", s.state, s.rubric);

@@ -235,6 +235,7 @@
       "- 현재 상태에 없는 항목은 학생이 아직 말하지 않은 것이다. 확인이 필요하면 targets에 넣어 물어도 된다.\n" +
       "- 개별 개념을 주제 맥락에서 정확히 아는지, 헷갈리기 쉬운 개념을 구분하는지, 개념 간 관계를 아는지 확인한다.\n" +
       "- 이미 '적용 수준', '이해 수준'인 항목은 다시 묻지 않는다. 오개념이나 이해 못함 판정이 확실하지 않은 항목은 다시 확인한다.\n" +
+      "- '(발표에서만 확인)'이 붙은 오개념·이해 못함 항목은 발표만 보고 정한 것이다. 질의응답에서 다시 확인해 학생이 바로잡을 기회를 주되, 정답이나 틀린 부분을 암시하지 않는다.\n" +
       "- '이해 못함'인 항목을 다시 물을 때는 같은 질문을 되풀이하지 않고, 더 쉽게 또는 구체적 장면을 주며 묻는다.\n" +
       "- 두 채점자의 의견이 갈린 항목은 어느 쪽이 맞는지 가릴 수 있는 질문으로 먼저 묻는다.\n" +
       "- 관계 항목은 채점기준표의 confusion(혼동 지점)과 question(가르는 질문)을 학생의 주제에 맞게 바꿔 묻는다.\n" +
@@ -266,6 +267,14 @@
       "- 상대 근거가 전사문과 기준표로 뒷받침될 때만 판정을 바꾼다. 내 판정이 더 맞으면 유지한다.\n" +
       "- reason에는 상대 근거를 받아들였는지, 왜 유지했는지를 한 문장으로 쓴다.\n"
     ) : "";
+    // ctx.presentation: 질문 전에 발표 전사문만으로 오개념·이해 못함을 판정하는 단계. answers[0]이 발표 전사문이다.
+    const presentation = ctx.presentation ? (
+      "\n[발표 판정]\n" +
+      "이번에는 질의응답 답변이 아니라 발표 전사문을 판정한다. 위 규칙의 '답변 전사문'은 '발표 전사문'으로 바꿔 읽는다.\n" +
+      `- '${MISCONCEPTION}'과 '${NOT_UNDERSTOOD}'만 판정한다. 잘 설명한 항목(적용·이해 수준)은 질의응답에서 확인하므로 출력하지 않는다.\n` +
+      `- '${NOT_UNDERSTOOD}'은 발표에서 개념을 설명했으나 그 내용으로 보아 이해하지 못한 것이 분명히 드러날 때만 쓴다. 발표에서 다루지 않은 것은 이해 못함이 아니다.\n` +
+      "- 문제가 없거나 발표만으로 판단할 수 없는 항목은 출력하지 않는다. 의심만 되는 정도면 출력하지 않는다(질의응답에서 확인한다).\n"
+    ) : "";
     const system = (
       "[작업: 답변 판정]\n" +
       "학생의 답변 전사문만을 근거로 항목별 이해 수준을 판정한다. 발표 내용이나 추측은 근거가 될 수 없다.\n" +
@@ -291,12 +300,13 @@
       "출력 형식:\n" +
       '{"judgments": [{"unit": "항목 이름", "status": "상태", "quote": "답변 원문 인용", "misconception_index": 0, "reason": "판정 이유 한 문장", "certain": true}]}' +
       (ctx.history?.length ? "\n- 이전 턴 질의응답은 맥락으로 참고한다. 학생이 이전 답을 보충했으면 함께 고려하되, quote는 이번 턴 답변 전사문에서 옮긴다." : "") +
-      exchange
+      presentation + exchange
     );
     const qa = questions.map((q, i) => ({question: q.text, targets: q.targets, answer: answers[i]}));
     let user = `발표 주제: ${topic}\n\n` +
       (ctx.history?.length ? `이전 턴 질의응답(맥락):\n${j(ctx.history)}\n\n` : "") +
-      `이번 턴 질문과 답변 전사문:\n${j(qa)}\n\n채점기준표:\n${j(rubricView(rubric, units))}`;
+      (ctx.presentation ? `발표 전사문:\n${answers[0]}` : `이번 턴 질문과 답변 전사문:\n${j(qa)}`) +
+      `\n\n채점기준표:\n${j(rubricView(rubric, units))}`;
     if (ctx.exchange) user += `\n\n다시 판정할 항목: ${units.join(", ")}\n내 1차 판정:\n${j(ctx.exchange.mine)}\n다른 채점자의 판정과 근거:\n${j(ctx.exchange.other)}`;
     const order = Object.keys(clips || {}).map(Number).sort((a, b) => a - b);
     if (order.length) {
