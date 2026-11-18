@@ -258,13 +258,46 @@
       // 두 채점자(모델)가 따로 판정한다. 두 채점자의 상태가 같은 항목만 확정된다.
       const st = settings(), models = [st.model, st.model2];
       const graders = models.map((m, i) => `채점자 ${i + 1} (${m})`), units = Object.keys(s.state);
-      const results = await Promise.all(models.map(model =>
-        L.judgeAnswers({...st, model}, s.analysis.topic || "", turn.questions, answers, s.rubric, clips, units)));
-      const byGrader = [], discarded = [];
-      results.forEach(([result], i) => {
-        const [valid, bad] = C.validJudgments(result.judgments, turn.turn, turn.questions, answers, s.rubric, graders[i]);
-        byGrader.push(valid); discarded.push(...bad);
-      });
+      // 이전 턴 질의응답을 맥락(히스토리)으로 함께 준다.
+      const history = s.turns.slice(0, -1).map(t => ({turn: t.turn,
+        qa: t.questions.map((q, i) => ({question: q.text, answer: (t.answers || [])[i] ?? ""}))}));
+      const judge = (model, us, ctx, files) => L.judgeAnswers({...st, model}, s.analysis.topic || "", turn.questions, answers, s.rubric, files, us, ctx);
+      const validate = rs => {
+        const out = {byGrader: [], discarded: [], raw: rs.map(([r]) => (Array.isArray(r.judgments) ? r.judgments : []))};
+        rs.forEach(([result], i) => {
+          const [valid, bad] = C.validJudgments(result.judgments, turn.turn, turn.questions, answers, s.rubric, graders[i]);
+          out.byGrader.push(valid); out.discarded.push(...bad);
+        });
+        return out;
+      };
+      // 1차: 두 채점자가 따로 판정한다.
+      const results = await Promise.all(models.map(m => judge(m, units, {history}, clips)));
+      const first = validate(results);
+      let final = first;
+      // 의견이 갈린 항목은 서로의 판정과 근거를 보여 준 뒤 각자 다시 판정한다. 그 결과가 같아야 확정된다.
+      const statusOf = (gi, u) => first.byGrader[gi][u]?.status || C.UNKNOWN;
+      const disputed = C.UNITS.filter(u => first.byGrader.some(g => g[u]) && statusOf(0, u) !== statusOf(1, u));
+      if (disputed.length) {
+        const view = (gi, u) => {
+          const o = first.byGrader[gi][u];
+          if (o) return {unit: u, status: o.status, quote: o.quote, reason: o.reason};
+          const d = first.discarded.find(x => x.grader === graders[gi] && C.normalizeUnit(x.unit) === u);
+          if (d) return {unit: u, status: C.UNKNOWN, quote: d.quote || "", reason: `${d.status} 판정을 냈으나 ${d.discard_reason}`};
+          const r = first.raw[gi].find(x => C.normalizeUnit(x?.unit) === u);
+          return {unit: u, status: C.UNKNOWN, quote: "", reason: r?.reason || "판정하지 않음"};
+        };
+        const second = validate(await Promise.all(models.map((m, gi) =>
+          judge(m, disputed, {history, exchange: {mine: disputed.map(u => view(gi, u)), other: disputed.map(u => view(1 - gi, u))}}, {}))));
+        const redo = u => disputed.includes(C.normalizeUnit(u));
+        final = {
+          byGrader: first.byGrader.map((g, gi) => Object.fromEntries(Object.entries(g).filter(([u]) => !redo(u))
+            .concat(Object.entries(second.byGrader[gi]).filter(([u]) => redo(u))))),
+          discarded: first.discarded.filter(d => !redo(d.unit)).concat(second.discarded.filter(d => redo(d.unit))),
+          raw: first.raw.map((r, gi) => r.filter(x => !redo(x?.unit)).concat(second.raw[gi].filter(x => redo(x?.unit)))),
+        };
+        turn.exchange = disputed.map(u => ({unit: u, before: [0, 1].map(gi => view(gi, u))}));
+      }
+      const {byGrader, discarded} = final;
       const infos = results.map(r => r[1]);
       const audioInfo = infos.find(i => i && !i.passed) || infos[0];  // 못 보낸 채점자가 있으면 그 이유
       if (Object.keys(clips).length) {
@@ -275,14 +308,14 @@
       turn.graders = graders; turn.discarded = discarded;
       // 화면에서 채점자별 판정을 나란히 보여 주려고 남긴다. by_grader: 인정된 판정, grader_raw: 모델이 낸 판정 그대로(미확인 이유 포함)
       turn.by_grader = byGrader;
-      turn.grader_raw = results.map(([result]) => (Array.isArray(result.judgments) ? result.judgments : []));
+      turn.grader_raw = final.raw;
       [turn.judgments, turn.disagreements] = C.applyJudgments(s.state, byGrader, graders, turn.turn);
       if (turn.turn >= C.MAX_TURNS || !C.needsSecondTurn(s.state)) {
         C.finalize(s.state, s.turns);
         s.finished = true;
       }
       let saved = await saveSession(s, `${turn.turn}턴 답변 판정`,
-        {answers, audio: audioInfo, graders, by_grader: byGrader, confirmed: turn.judgments, disagreements: turn.disagreements, discarded});
+        {answers, audio: audioInfo, graders, by_grader: byGrader, exchange: turn.exchange || [], confirmed: turn.judgments, disagreements: turn.disagreements, discarded});
       if (saved.finished) {
         try { saved = await writeFeedback(saved); } catch (e) { /* 판정은 이미 저장됐다. 피드백은 탭 5에서 다시 만들 수 있다. */ }
       }

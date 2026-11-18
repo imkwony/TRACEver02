@@ -559,10 +559,18 @@ function turnCard(t, editable) {
 function graderTable(t) {
   const norm = u => Core.normalizeUnit(u);
   const units = Core.UNITS.filter(u => t.by_grader.some(g => g[u]) || t.discarded.some(d => norm(d.unit) === u)
-    || (t.grader_raw || []).some(r => r.some(j => norm(j?.unit) === u)));
+    || (t.grader_raw || []).some(r => r.some(j => norm(j?.unit) === u)) || (t.exchange || []).some(e => e.unit === u));
   if (!units.length) return '<p class="hint">두 채점자 모두 판정한 항목이 없습니다.</p>';
   const confirmed = new Set(t.judgments.map(j => j.unit));
+  const ex = u => (t.exchange || []).find(e => e.unit === u);
+  // 근거 교환을 거친 항목은 1차 판정을 위에 보이고, 아래에 교환 뒤 판정을 보인다.
   const cell = (u, gi) => {
+    const e = ex(u);
+    if (!e) return cellBody(u, gi);
+    const b = e.before[gi];
+    return `<div class="hint">1차: ${chip(b.status)} ${b.quote ? `“${esc(b.quote)}” ` : ""}${esc(b.reason)}</div><div class="hint" style="margin:4px 0">↓ 근거 교환 후</div>${cellBody(u, gi)}`;
+  };
+  const cellBody = (u, gi) => {
     const o = t.by_grader[gi][u], g = t.graders[gi];
     if (o) return `${chip(o.status)}${o.certain ? "" : ' <span class="hint">(확신 낮음)</span>'}<blockquote>“${esc(o.quote)}”</blockquote><div>${esc(o.reason)}</div><details class="hint" style="border:0;padding:0;margin:4px 0 0"><summary style="font-weight:400">근거로 든 채점기준</summary>${esc(o.rubric_item)}</details>`;
     const d = t.discarded.find(x => x.grader === g && norm(x.unit) === u);
@@ -573,8 +581,8 @@ function graderTable(t) {
   };
   return `<div style="overflow-x:auto"><table><tr><th>항목</th>${t.graders.map(g => `<th style="width:38%">${esc(g)}</th>`).join("")}<th style="white-space:nowrap">결과</th></tr>
     ${units.map(u => `<tr><td style="white-space:nowrap"><b>${unitName(u)}</b></td><td>${cell(u, 0)}</td><td>${cell(u, 1)}</td>
-      <td>${confirmed.has(u) ? `${chip(t.judgments.find(j => j.unit === u).status)}<div class="hint">일치 → 확정</div>`
-        : (t.disagreements || []).some(d => d.unit === u) ? '<span class="chip s-unknown">불일치</span><div class="hint">확정하지 않고 다시 확인</div>'
+      <td>${confirmed.has(u) ? `${chip(t.judgments.find(j => j.unit === u).status)}<div class="hint">${ex(u) ? "근거 교환 후 일치 → 확정" : "일치 → 확정"}</div>`
+        : (t.disagreements || []).some(d => d.unit === u) ? `<span class="chip s-unknown">불일치</span><div class="hint">${ex(u) ? "근거 교환 후에도 불일치 → " : ""}확정하지 않고 다시 확인</div>`
         : `${chip("미확인")}<div class="hint">두 채점자 모두 판단 보류</div>`}</td></tr>`).join("")}
   </table></div>`;
 }

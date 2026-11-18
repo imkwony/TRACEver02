@@ -256,7 +256,16 @@
   }
 
   // ---- 4. 답변 판정 ---- clips: {질문 번호(0부터): [파일 이름, Blob]}. units: 기준을 넘길 항목.
-  async function judgeAnswers(s, topic, questions, answers, rubric, clips, units) {
+  // ctx.history: 이전 턴 질의응답(맥락). ctx.exchange: 근거 교환 단계면 {mine, other} — 의견이 갈린 항목에 대한 내 판정과 상대 판정.
+  async function judgeAnswers(s, topic, questions, answers, rubric, clips, units, ctx = {}) {
+    const exchange = ctx.exchange ? (
+      "\n[근거 교환 후 재판정]\n" +
+      "아래 항목은 두 채점자의 판정이 갈렸다. 내 1차 판정과 다른 채점자의 판정·근거를 함께 준다.\n" +
+      "- 이 항목들만 다시 판정한다. 다른 항목은 출력하지 않는다.\n" +
+      "- 상대 근거를 답변 전사문과 채점기준표로 직접 확인한 뒤 각자 판단한다. 상대 판정을 따를 의무는 없다.\n" +
+      "- 상대 근거가 전사문과 기준표로 뒷받침될 때만 판정을 바꾼다. 내 판정이 더 맞으면 유지한다.\n" +
+      "- reason에는 상대 근거를 받아들였는지, 왜 유지했는지를 한 문장으로 쓴다.\n"
+    ) : "";
     const system = (
       "[작업: 답변 판정]\n" +
       "학생의 답변 전사문만을 근거로 항목별 이해 수준을 판정한다. 발표 내용이나 추측은 근거가 될 수 없다.\n" +
@@ -280,10 +289,15 @@
       `- '${NOT_UNDERSTOOD}'의 quote는 모른다고 한 말이나 엉뚱한 대답 부분을 그대로 옮긴다("몰라요"처럼 짧아도 된다).\n` +
       "- certain은 판정이 분명하면 true, 답변이 짧거나 모호해 확신하기 어려우면 false.\n" +
       "출력 형식:\n" +
-      '{"judgments": [{"unit": "항목 이름", "status": "상태", "quote": "답변 원문 인용", "misconception_index": 0, "reason": "판정 이유 한 문장", "certain": true}]}'
+      '{"judgments": [{"unit": "항목 이름", "status": "상태", "quote": "답변 원문 인용", "misconception_index": 0, "reason": "판정 이유 한 문장", "certain": true}]}' +
+      (ctx.history?.length ? "\n- 이전 턴 질의응답은 맥락으로 참고한다. 학생이 이전 답을 보충했으면 함께 고려하되, quote는 이번 턴 답변 전사문에서 옮긴다." : "") +
+      exchange
     );
     const qa = questions.map((q, i) => ({question: q.text, targets: q.targets, answer: answers[i]}));
-    let user = `발표 주제: ${topic}\n\n질문과 답변 전사문:\n${j(qa)}\n\n채점기준표:\n${j(rubricView(rubric, units))}`;
+    let user = `발표 주제: ${topic}\n\n` +
+      (ctx.history?.length ? `이전 턴 질의응답(맥락):\n${j(ctx.history)}\n\n` : "") +
+      `이번 턴 질문과 답변 전사문:\n${j(qa)}\n\n채점기준표:\n${j(rubricView(rubric, units))}`;
+    if (ctx.exchange) user += `\n\n다시 판정할 항목: ${units.join(", ")}\n내 1차 판정:\n${j(ctx.exchange.mine)}\n다른 채점자의 판정과 근거:\n${j(ctx.exchange.other)}`;
     const order = Object.keys(clips || {}).map(Number).sort((a, b) => a - b);
     if (order.length) {
       user += AUDIO_NOTE + ` 첨부한 음성은 순서대로 ${order.map(i => `${i + 1}번째`).join(", ")} 질문의 답변이다.` +
