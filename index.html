@@ -533,7 +533,18 @@ function analysisCard(s) {
     <p><b>주제</b> ${esc(a.topic)}</p><p class="hint">${esc(a.summary)}</p>
     <p><b>발표한 개념</b> ${a.mentioned_concepts.length ? a.mentioned_concepts.map(c => `<span class="chip t">${c}</span>`).join("") : "없음"}</p>
     ${sus.length ? `<h3>오개념 의심 지점 (판정이 아니라 질문 재료)</h3>${sus.map(m => `<div class="ev"><span class="chip t">${esc(unitName(String(m.unit)))}</span><blockquote>${esc(m.quote)}</blockquote><span class="hint">${esc(m.why)}</span></div>`).join("")}` : ""}
+    <h3>발표 기준 예상 이해도 <span class="hint">판정이 아니라 참고용</span></h3>
+    <div style="pointer-events:none">${graphSvg(expectedState(a))}</div>
+    <div style="text-align:center;margin-top:8px">${["이해 수준", "오개념"].map(chip).join("")}</div>
+    <p class="hint" style="text-align:center">발표에서 다룬 개념 = 이해 수준 · 오개념 의심 지점 = 오개념 · 흐린 항목 = 발표에서 다루지 않음<br>적용 수준과 실제 이해 여부는 질의응답 판정으로 확인합니다(탭 5).</p>
   </div>`;
+}
+// 발표 분석만으로 계산한 예상 이해도. 모델을 다시 부르지 않고, 질문 생성과 판정에도 쓰지 않는다.
+function expectedState(a) {
+  const st = {};
+  for (const c of a.mentioned_concepts || []) st[c] = {status: "이해 수준"};
+  for (const m of a.suspected_misconceptions || []) for (const u of Core.expandUnit(m.unit)) st[u] = {status: "오개념"};
+  return st;
 }
 const ansKey = (t, i) => `ans:${S.session.id}:${t.turn}:${i}`;  // 제출 전 답변 보관 이름
 function turnCard(t, editable) {
